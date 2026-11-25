@@ -1,15 +1,27 @@
 :root {
+  color-scheme: dark;
   --bg: #0e1013; --panel: #161a1f; --panel2: #1d2228; --line: #2a3038; --text: #e6e9ee; --dim: #8b95a3;
   --accent: #3fa7ff; --danger: #ff5c5c; --ok: #3ddc84; --font: 16px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 button, input, select, textarea { font: inherit; color: inherit; }
-button, .button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; text-decoration: none; display: inline-block; }
+button, .button { -webkit-appearance: none; appearance: none; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; text-decoration: none; display: inline-block; }
 button:hover, .button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #001222; font-weight: 600; }
 button.danger, .danger-text { color: var(--danger); }
-input, select, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+input, select, textarea { background-color: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+/* WebKitGTK (Linux desktop app) draws native GTK widgets in the system theme, which gives
+   white boxes under our white text. Turn native drawing off for text fields and dropdowns. */
+input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range]), select, textarea {
+  -webkit-appearance: none; appearance: none; background-color: var(--bg); color: var(--text);
+}
+select { padding-right: 24px; background-image: linear-gradient(45deg, transparent 50%, var(--dim) 50%), linear-gradient(135deg, var(--dim) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 55%, calc(100% - 8px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
+option, optgroup { background-color: var(--panel); color: var(--text); }
+input::placeholder, textarea::placeholder { color: var(--dim); opacity: 1; }
+input:disabled, select:disabled, option:disabled { color: var(--dim); }
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
 input[type=color] { padding: 0; width: 34px; height: 30px; }
 input[type=checkbox] { width: 16px; height: 16px; }

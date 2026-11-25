@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Fix: text fields and dropdowns were white with white text in the Linux desktop app (WebKitGTK drew native GTK widgets). They now follow the dark theme.
+- Fix: setup pages update at once after you add, edit or delete something (no refresh needed).
+
 ## 0.1.0 (unreleased)
 
 First version.
