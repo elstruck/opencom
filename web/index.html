@@ -1,1 +1,138 @@
-<!doctype html><title>opencom</title>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>opencom</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="alert" class="alert hidden"></div>
+
+<header class="top">
+  <div class="brand">open<b>com</b></div>
+  <div id="showName" class="show-name"></div>
+  <nav class="tabs">
+    <button data-tab="live" class="active">Live</button>
+    <button data-tab="channels">Channels</button>
+    <button data-tab="keywords">Keywords</button>
+    <button data-tab="automations">Automations</button>
+    <button data-tab="osc">OSC / MIDI</button>
+    <button data-tab="models">Speech models</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <div id="conn" class="conn" title="Connection">●</div>
+</header>
+
+<main>
+  <!-- LIVE -->
+  <section id="tab-live" class="tab live">
+    <aside class="sidebar">
+      <div class="side-head">
+        <span>Channels</span>
+        <span class="font-btns"><button id="fontDown" title="Smaller text">A−</button><button id="fontUp" title="Bigger text">A+</button></span>
+      </div>
+      <ul id="channelList" class="channel-list"></ul>
+      <div class="side-foot">
+        <button id="markAllRead">Mark all read</button>
+        <button id="clearAll" class="danger-text">Clear</button>
+        <a id="exportLink" href="/api/v1/transcript/export" target="_blank">Export</a>
+      </div>
+    </aside>
+    <div class="feed-wrap">
+      <div id="feed" class="feed"></div>
+      <button id="jumpLatest" class="jump hidden">↓ New messages</button>
+      <form id="sendForm" class="send">
+        <select id="sendChannel"></select>
+        <input id="sendText" placeholder="Type a message into the channel…" autocomplete="off">
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- CHANNELS -->
+  <section id="tab-channels" class="tab hidden">
+    <div class="page">
+      <div class="page-head"><h2>Channels</h2><button id="addChannel" class="primary">+ Add channel</button></div>
+      <p class="hint">Each channel listens to one input of a sound card (or a WAV file for testing). Detected inputs: <span id="deviceSummary">…</span></p>
+      <div id="channelEditors"></div>
+    </div>
+  </section>
+
+  <!-- KEYWORDS -->
+  <section id="tab-keywords" class="tab hidden">
+    <div class="page">
+      <div class="page-head"><h2>Keywords</h2><button id="addKeyword" class="primary">+ Add keyword</button></div>
+      <p class="hint">Keywords are highlighted in every channel. To trigger actions on a phrase, use Automations.</p>
+      <table class="grid" id="keywordTable"><thead><tr><th>Text</th><th>Whole word</th><th>Color</th><th>Show as</th><th>Mask</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- AUTOMATIONS -->
+  <section id="tab-automations" class="tab hidden">
+    <div class="page">
+      <div class="page-head"><h2>Automations</h2><button id="addAutomation" class="primary">+ Add automation</button></div>
+      <p class="hint">When a trigger happens, the actions run in order. In text fields, <code>{text}</code>, <code>{phrase}</code> and <code>{channel}</code> expand. OSC triggers also give <code>{address}</code>, <code>{arg0}</code>, <code>{arg1}</code>…</p>
+      <div id="automationEditors"></div>
+    </div>
+  </section>
+
+  <!-- OSC / MIDI -->
+  <section id="tab-osc" class="tab hidden">
+    <div class="page">
+      <div class="page-head"><h2>OSC destinations</h2><button id="addDest" class="primary">+ Add destination</button></div>
+      <table class="grid" id="destTable"><thead><tr><th>Name</th><th>Host</th><th>Port</th><th>On</th><th></th></tr></thead><tbody></tbody></table>
+      <h3>Send a test OSC message</h3>
+      <form id="oscTest" class="row-form">
+        <select id="oscTestDest"></select>
+        <input id="oscTestAddr" placeholder="/cue/go" value="/opencom/test">
+        <input id="oscTestArg" placeholder="string argument (optional)">
+        <button>Send</button>
+      </form>
+      <h3>OSC input</h3>
+      <p class="hint">opencom listens on UDP port <b id="oscPort">–</b>. It accepts <code>/opencom/send &lt;channel&gt; &lt;text&gt;</code> and <code>/opencom/alert &lt;text&gt;</code>, and any address can trigger an automation.</p>
+      <div id="oscLog" class="log"></div>
+      <h3>MIDI outputs</h3>
+      <ul id="midiPorts" class="plain"></ul>
+    </div>
+  </section>
+
+  <!-- MODELS -->
+  <section id="tab-models" class="tab hidden">
+    <div class="page">
+      <div class="page-head"><h2>Speech models</h2></div>
+      <p class="hint">All speech recognition runs on this computer. Models are stored in <code id="modelsDir"></code>.</p>
+      <div id="modelList" class="cards"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="tab-settings" class="tab hidden">
+    <div class="page">
+      <div class="page-head"><h2>Settings</h2></div>
+      <form id="settingsForm" class="settings">
+        <label>Show name <input name="showName"></label>
+        <label>CPU threads per decode <input name="threads" type="number" min="1" max="32"></label>
+        <label>Partial results every (seconds, 0 = off) <input name="partialInterval" type="number" step="0.1" min="0"></label>
+        <label>Voice detection threshold (0–1) <input name="vadThreshold" type="number" step="0.05" min="0.05" max="0.95"></label>
+        <label>Silence that ends a line (seconds) <input name="minSilence" type="number" step="0.1" min="0.1"></label>
+        <label>Longest line (seconds) <input name="maxSpeech" type="number" step="1" min="2"></label>
+        <label>OSC input port <input name="oscListenPort" type="number" min="1" max="65535"></label>
+        <label>API key (blank = no auth) <input name="apiKey" type="password" autocomplete="off"></label>
+        <label>History limit <input name="historyLimit" type="number" min="100"></label>
+        <button class="primary">Save settings</button>
+      </form>
+      <h3>Show file</h3>
+      <p class="hint">Saved automatically to <code id="savePath"></code>.</p>
+      <div class="row-form">
+        <a class="button" href="/api/v1/config" download="show.json">Download show file</a>
+        <label class="button">Load show file <input type="file" id="loadShow" accept=".json" hidden></label>
+      </div>
+      <h3>Status</h3>
+      <div id="statusLog" class="log"></div>
+    </div>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
