@@ -642,6 +642,6 @@ mod tests {
         assert_eq!(st, StatusCode::OK);
         assert_eq!(s["stt"]["threads"], 4);
         assert_eq!(s["stt"]["model"], "parakeet-tdt-0.6b-v2-int8");
-        assert_eq!(s["oscListenPort"], 9000);
+        assert_eq!(s["oscListenPort"], 9431);
     }
 }

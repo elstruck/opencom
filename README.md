@@ -51,7 +51,7 @@ Then open **Channels**, add one channel per input, and pick the sound card and i
 To let other computers on the network follow the show:
 
 ```sh
-opencom serve --host 0.0.0.0 --port 7420
+opencom serve --host 0.0.0.0 --port 7430
 ```
 
 Set an API key in **Settings** first. Clients then pass it as `Authorization: Bearer <key>`
@@ -95,7 +95,7 @@ because opencom only decodes audio that its voice detector (Silero VAD) marks as
 
 ## API
 
-The server listens on `http://127.0.0.1:7420` by default. All endpoints are under `/api/v1`.
+The server listens on `http://127.0.0.1:7430` by default. All endpoints are under `/api/v1`.
 
 | Method | Path | Purpose |
 |---|---|---|

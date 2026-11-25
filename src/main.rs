@@ -22,7 +22,7 @@ enum Cmd {
         show: Option<PathBuf>,
         #[arg(long, default_value = "127.0.0.1")]
         host: String,
-        #[arg(long, default_value_t = 7420)]
+        #[arg(long, default_value_t = 7430)]
         port: u16,
         /// Open the UI in the default browser.
         #[arg(long)]
@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "opencom=info,warn".into()))
         .init();
     let cli = Cli::parse();
-    match cli.cmd.unwrap_or(Cmd::Serve { show: None, host: "127.0.0.1".into(), port: 7420, open: false }) {
+    match cli.cmd.unwrap_or(Cmd::Serve { show: None, host: "127.0.0.1".into(), port: 7430, open: false }) {
         Cmd::Serve { show, host, port, open } => serve(show.unwrap_or_else(opencom::server::default_show_path), &host, port, open).await,
         Cmd::Devices => {
             let devs = tokio::task::spawn_blocking(opencom::audio::list_inputs).await?;

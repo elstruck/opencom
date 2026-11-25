@@ -8,6 +8,12 @@ repository = "https://github.com/opencom-project/opencom"
 readme = "README.md"
 keywords = ["transcription", "osc", "midi", "live-production", "intercom"]
 
+[workspace]
+members = [".", "desktop"]
+# `cargo build` at the root builds only the core and CLI. Build the desktop app with
+# `cargo build -p opencom-desktop`.
+default-members = ["."]
+
 [features]
 default = ["audio", "midi", "stt"]
 # Live capture from sound cards (cpal: WASAPI/ASIO, ALSA/PipeWire/JACK, CoreAudio).

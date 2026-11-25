@@ -50,5 +50,5 @@
       "actions": [ { "type": "sendText", "channelId": "44444444-4444-4444-8444-444444444444", "text": "Eos fired {address}" } ]
     }
   ],
-  "settings": { "oscListenPort": 9000 }
+  "settings": { "oscListenPort": 9431 }
 }

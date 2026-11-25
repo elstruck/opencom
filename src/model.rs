@@ -397,7 +397,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             stt: SttSettings::default(),
-            osc_listen_port: Some(9000),
+            osc_listen_port: Some(9431),
             api_key: None,
             history_limit: default_history(),
         }
@@ -466,6 +466,6 @@ mod tests {
         let cfg: ShowConfig = serde_json::from_str(r#"{"channels":[{"id":"6f1c6c2e-8a5e-4d0f-9b0e-0c1d2e3f4a5b","name":"A"}]}"#).unwrap();
         assert!(cfg.channels[0].typing_enabled);
         assert_eq!(cfg.channels[0].source, ChannelSource::None);
-        assert_eq!(cfg.settings.osc_listen_port, Some(9000));
+        assert_eq!(cfg.settings.osc_listen_port, Some(9431));
     }
 }

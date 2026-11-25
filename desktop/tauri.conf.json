@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "opencom",
+  "version": "0.1.0",
+  "identifier": "io.opencom.app",
+  "build": { "frontendDist": "dist" },
+  "app": {
+    "windows": [],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "Live multi-channel transcription and show control",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png", "icons/icon.ico"]
+  }
+}
