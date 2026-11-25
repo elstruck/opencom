@@ -331,9 +331,9 @@ async function loadDevices() {
 
 function sourceFields(ch) {
   const s = ch.source || { kind: 'none' };
-  const devOpts = ['<option value="">Default input</option>', ...S.devices.map(d => `<option ${s.device === d.name ? 'selected' : ''}>${esc(d.name)}</option>`)];
-  if (s.kind === 'device' && s.device && !S.devices.some(d => d.name === s.device)) devOpts.push(`<option selected>${esc(s.device)}</option>`);
-  const dev = S.devices.find(d => d.name === s.device) || S.devices.find(d => d.isDefault);
+  const devOpts = ['<option value="">Default input</option>', ...S.devices.map(d => `<option value="${esc(d.id)}" ${s.device === d.id || s.device === d.name ? 'selected' : ''}>${esc(d.name)} (${d.channels} ch)</option>`)];
+  if (s.kind === 'device' && s.device && !S.devices.some(d => d.id === s.device || d.name === s.device)) devOpts.push(`<option value="${esc(s.device)}" selected>${esc(s.device)} (not connected)</option>`);
+  const dev = S.devices.find(d => d.id === s.device || d.name === s.device) || S.devices.find(d => d.isDefault);
   const nch = Math.max(dev?.channels || 2, (s.channelIndex || 0) + 1);
   const chOpts = Array.from({ length: nch }, (_, i) => `<option value="${i}" ${s.channelIndex === i ? 'selected' : ''}>Input ${i + 1}</option>`).join('');
   return `

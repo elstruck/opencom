@@ -61,6 +61,8 @@ impl Resampler {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InputDevice {
+    /// Stable ID to store in show files, for example `alsa:hw:CARD=B101,DEV=0` or `wasapi:{...}`.
+    pub id: String,
     pub name: String,
     pub host: String,
     pub channels: u16,
@@ -160,47 +162,107 @@ mod device {
         d.description().map(|x| x.name().to_string()).unwrap_or_else(|_| "unknown".into())
     }
 
-    pub fn list_inputs() -> Vec<InputDevice> {
-        let mut out = Vec::new();
-        for host_id in cpal::available_hosts() {
-            let Ok(host) = cpal::host_from_id(host_id) else { continue };
-            let default = host.default_input_device().map(|d| device_name(&d));
-            let Ok(devs) = host.input_devices() else { continue };
-            for d in devs {
-                let name = device_name(&d);
-                let max_ch = d.supported_input_configs().map(|c| c.map(|r| r.channels()).max().unwrap_or(0)).unwrap_or(0);
-                let rate = d.default_input_config().map(|c| c.sample_rate()).unwrap_or(0);
-                if max_ch == 0 {
-                    continue;
-                }
-                out.push(InputDevice { is_default: default.as_deref() == Some(&name), name, host: host_id.name().to_string(), channels: max_ch, sample_rate: rate });
-            }
-        }
-        out
+    fn device_id(d: &cpal::Device) -> String {
+        d.id().map(|i| i.to_string()).unwrap_or_default()
     }
 
-    fn find_device(name: Option<&str>) -> Result<cpal::Device> {
-        let host = cpal::default_host();
-        match name {
-            None => host.default_input_device().ok_or_else(|| anyhow!("no default input device")),
-            Some(n) => {
-                for host_id in cpal::available_hosts() {
-                    let Ok(h) = cpal::host_from_id(host_id) else { continue };
-                    if let Ok(devs) = h.input_devices() {
-                        for d in devs {
-                            if device_name(&d) == n {
-                                return Ok(d);
-                            }
+    /// ALSA lists every plugin as a device. Keep the useful ones: the default device,
+    /// PipeWire/Pulse, and raw hardware (`hw:`). Set OPENCOM_ALL_DEVICES=1 to see all.
+    fn useful(id: &str) -> bool {
+        if std::env::var_os("OPENCOM_ALL_DEVICES").is_some() {
+            return true;
+        }
+        match id.strip_prefix("alsa:") {
+            Some(pcm) => {
+                pcm == "default"
+                    || pcm == "pipewire"
+                    || pcm == "pulse"
+                    // Named hardware only; `hw:CARD=0` duplicates `hw:CARD=PCH`.
+                    || (pcm.starts_with("hw:CARD=") && !pcm["hw:CARD=".len()..].starts_with(|c: char| c.is_ascii_digit()))
+            }
+            None => true,
+        }
+    }
+
+    /// Run `f` with stderr silenced. ALSA's JACK plugin prints noise when probed.
+    #[cfg(target_os = "linux")]
+    fn quiet<R>(f: impl FnOnce() -> R) -> R {
+        // SAFETY: plain fd juggling on stderr; restored before returning.
+        unsafe {
+            let saved = libc::dup(2);
+            let null = libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY);
+            if saved < 0 || null < 0 {
+                return f();
+            }
+            libc::dup2(null, 2);
+            libc::close(null);
+            let r = f();
+            libc::dup2(saved, 2);
+            libc::close(saved);
+            r
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    fn quiet<R>(f: impl FnOnce() -> R) -> R {
+        f()
+    }
+
+    pub fn list_inputs() -> Vec<InputDevice> {
+        quiet(|| {
+            let mut out = Vec::new();
+            for host_id in cpal::available_hosts() {
+                let Ok(host) = cpal::host_from_id(host_id) else { continue };
+                let default_id = host.default_input_device().map(|d| device_id(&d));
+                let Ok(devs) = host.input_devices() else { continue };
+                for d in devs {
+                    let id = device_id(&d);
+                    if id.is_empty() || !useful(&id) || out.iter().any(|x: &InputDevice| x.id == id) {
+                        continue;
+                    }
+                    let max_ch = d.supported_input_configs().map(|c| c.map(|r| r.channels()).max().unwrap_or(0)).unwrap_or(0);
+                    if max_ch == 0 {
+                        continue;
+                    }
+                    let rate = d.default_input_config().map(|c| c.sample_rate()).unwrap_or(0);
+                    let mut name = device_name(&d);
+                    if let Some(pcm) = id.strip_prefix("alsa:") {
+                        if !pcm.starts_with("hw:") {
+                            name = format!("{name} ({pcm})");
                         }
                     }
+                    out.push(InputDevice { is_default: default_id.as_deref() == Some(id.as_str()), id, name, host: host_id.name().to_string(), channels: max_ch, sample_rate: rate });
                 }
-                // Fall back to a case-insensitive substring match.
-                let want = n.to_lowercase();
-                host.input_devices()?
-                    .find(|d| device_name(d).to_lowercase().contains(&want))
-                    .ok_or_else(|| anyhow!("input device {n:?} not found"))
             }
-        }
+            out
+        })
+    }
+
+    /// Find a device by stored ID, then by exact name, then by name substring.
+    fn find_device(key: Option<&str>) -> Result<cpal::Device> {
+        quiet(|| {
+            let host = cpal::default_host();
+            let Some(n) = key else {
+                return host.default_input_device().ok_or_else(|| anyhow!("no default input device"));
+            };
+            if let Ok(id) = n.parse::<cpal::DeviceId>() {
+                for host_id in cpal::available_hosts() {
+                    if let Some(d) = cpal::host_from_id(host_id).ok().and_then(|h| h.device_by_id(&id)) {
+                        return Ok(d);
+                    }
+                }
+            }
+            let mut all = Vec::new();
+            for host_id in cpal::available_hosts() {
+                if let Ok(devs) = cpal::host_from_id(host_id).and_then(|h| h.input_devices().map_err(Into::into)) {
+                    all.extend(devs);
+                }
+            }
+            if let Some(i) = all.iter().position(|d| device_name(d) == n || device_id(d) == n) {
+                return Ok(all.swap_remove(i));
+            }
+            let want = n.to_lowercase();
+            all.into_iter().find(|d| device_name(d).to_lowercase().contains(&want)).ok_or_else(|| anyhow!("input device {n:?} not found"))
+        })
     }
 
     /// Open one device and route the given channel indexes to their senders.

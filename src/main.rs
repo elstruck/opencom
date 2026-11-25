@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
                 println!("No audio input devices found.");
             }
             for d in devs {
-                println!("{}{}  [{} ch @ {} Hz, {}]", if d.is_default { "* " } else { "  " }, d.name, d.channels, d.sample_rate, d.host);
+                println!("{}{}  [{} ch @ {} Hz]\n    id: {}", if d.is_default { "* " } else { "  " }, d.name, d.channels, d.sample_rate, d.id);
             }
             Ok(())
         }

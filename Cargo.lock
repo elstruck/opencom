@@ -1724,6 +1724,7 @@ dependencies = [
  "futures",
  "hound",
  "http-body-util",
+ "libc",
  "midir",
  "parking_lot",
  "reqwest",

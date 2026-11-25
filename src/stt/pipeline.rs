@@ -59,9 +59,28 @@ impl ChannelPipeline {
 
     /// Run until the sender closes or sends `End`. Blocks; call from a dedicated thread.
     pub fn run(mut self, rx: Receiver<AudioMsg>) {
+        let mut stalled = false;
         loop {
-            let first = match rx.recv() {
-                Ok(AudioMsg::Samples(s)) => s,
+            let first = match rx.recv_timeout(Duration::from_secs(3)) {
+                Ok(AudioMsg::Samples(s)) => {
+                    if stalled {
+                        stalled = false;
+                        self.hub.emit(Event::Status { component: "audio".into(), ok: true, message: format!("{}: audio is back", self.channel_name()) });
+                    }
+                    s
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if !stalled {
+                        stalled = true;
+                        self.hub.emit(Event::Level { channel_id: self.channel_id, rms: 0.0, speaking: false });
+                        self.hub.emit(Event::Status {
+                            component: "audio".into(),
+                            ok: false,
+                            message: format!("{}: no audio for 3 s (device unplugged, or in use by another app?)", self.channel_name()),
+                        });
+                    }
+                    continue;
+                }
                 Ok(AudioMsg::End) | Err(_) => break,
             };
             self.feed(&first);
@@ -88,6 +107,10 @@ impl ChannelPipeline {
         if let Some(id) = self.entry.take() {
             self.hub.remove_entry(id);
         }
+    }
+
+    fn channel_name(&self) -> String {
+        self.hub.channel(self.channel_id).map(|c| c.name).unwrap_or_else(|| self.channel_id.to_string())
     }
 
     /// Feed audio synchronously (also used by tests and file transcription).

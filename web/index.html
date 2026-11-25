@@ -55,6 +55,7 @@
     <div class="page">
       <div class="page-head"><h2>Channels</h2><button id="addChannel" class="primary">+ Add channel</button></div>
       <p class="hint">Each channel listens to one input of a sound card (or a WAV file for testing). Detected inputs: <span id="deviceSummary">…</span></p>
+      <p class="hint">On Linux, a <code>hw:</code> device is exclusive: no other app (or PipeWire) can use it at the same time. Use the PipeWire or default device to share an input.</p>
       <div id="channelEditors"></div>
     </div>
   </section>
