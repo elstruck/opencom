@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Open-source live multi-channel transcription and voice-triggered show control for Windows, Linux and macOS."
-repository = "https://github.com/opencom-project/opencom"
+repository = "https://github.com/elstruck/opencom"
 readme = "README.md"
 keywords = ["transcription", "osc", "midi", "live-production", "intercom"]
 
