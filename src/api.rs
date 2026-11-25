@@ -335,6 +335,7 @@ async fn channel_send(State(s): State<AppState>, Path(id): Path<String>, Json(b)
             started_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             matched_keywords: vec![],
+            translation: None,
         }));
     }
     Ok(Json(s.hub.add_entry(ch.id, b.text, EntrySource::Typed, false)))

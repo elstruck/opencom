@@ -24,6 +24,8 @@ or flash an alert on every screen.
   - Triggers: a spoken phrase (optionally before the sentence ends), incoming OSC (with wildcards), incoming MIDI, an HTTP webhook, or a manual run.
   - Actions: OSC, MIDI, HTTP request, post text into a channel, full-screen alert, UI commands, delay.
   - Policies: restart if running, ignore if running, run in parallel. An optional cooldown limits repeat firing.
+- **Translation (optional).** opencom can translate a channel's lines into your language through
+  any OpenAI-compatible API, such as a local Ollama, llama.cpp or LM Studio, or a cloud service.
 - **Typed messages.** Anyone can type into a channel. This lets FOH reply without talking.
 - **Network channels.** A channel can mirror a channel from another opencom on the LAN.
   opencom finds the other machines through mDNS. Typed replies go back to the machine that owns the channel.
@@ -173,7 +175,6 @@ sound card ──► capture thread ──► per-channel resample to 16 kHz
 
 ## Roadmap
 
-- Translation of channels into the reader's language
 - Signed Windows and macOS installers
 
 ## About this project

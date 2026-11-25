@@ -110,7 +110,7 @@ function msgHtml(e) {
   const t = new Date(e.startedAt);
   const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const cls = ['msg', e.inProgress ? 'progress' : '', e.source !== 'audio' ? e.source : '', e.seen ? '' : 'unseen'].join(' ');
-  return `<div class="${cls}" id="m-${e.id}" style="--c:${esc(colorOf(ch))}"><div class="meta"><span class="ch">${esc(ch?.name || '?')}</span>${time}</div><div class="text">${renderText(e.text, e.channelId)}</div></div>`;
+  return `<div class="${cls}" id="m-${e.id}" style="--c:${esc(colorOf(ch))}"><div class="meta"><span class="ch">${esc(ch?.name || '?')}</span>${time}</div><div class="text">${renderText(e.text, e.channelId)}${e.translation ? `<div class="tr">${esc(e.translation)}</div>` : ''}</div></div>`;
 }
 
 function renderFeed() {
@@ -398,6 +398,7 @@ function renderChannelEditors() {
         <input class="grow" data-f="name" value="${esc(ch.name)}" placeholder="Channel name">
         <label><input type="checkbox" data-f="enabled" ${ch.enabled !== false ? 'checked' : ''}> transcribe</label>
         <label><input type="checkbox" data-f="typingEnabled" ${ch.typingEnabled !== false ? 'checked' : ''}> typing</label>
+        <label title="Translate final lines (set up in Settings)"><input type="checkbox" data-f="translate" ${ch.translate ? 'checked' : ''}> translate</label>
         <button class="danger" data-act="del">Delete</button>
       </div>
       <div class="row">${sourceFields(ch)}</div>
@@ -692,6 +693,8 @@ async function renderSettings() {
   f.showName.value = S.cfg.name || '';
   f.threads.value = s.stt.threads; f.partialInterval.value = s.stt.partialInterval; f.vadThreshold.value = s.stt.vadThreshold;
   f.minSilence.value = s.stt.minSilence; f.maxSpeech.value = s.stt.maxSpeech; f.oscListenPort.value = s.oscListenPort ?? '';
+  const tr = s.translation || {};
+  f.trEnabled.checked = !!tr.enabled; f.trEndpoint.value = tr.endpoint || ''; f.trModel.value = tr.model || ''; f.trTarget.value = tr.targetLanguage || ''; f.trKey.value = tr.apiKey || '';
   f.apiKey.value = s.apiKey || ''; f.historyLimit.value = s.historyLimit; f.compatPort.value = s.compatProdcomPort ?? '';
   const st = await api('/status');
   $('#savePath').textContent = st.savePath || '(not saved)';
@@ -707,6 +710,7 @@ $('#settingsForm').onsubmit = async ev => {
     cfg.settings.apiKey = f.apiKey.value || null;
     cfg.settings.historyLimit = +f.historyLimit.value;
     cfg.settings.compatProdcomPort = f.compatPort.value ? +f.compatPort.value : null;
+    cfg.settings.translation = { enabled: f.trEnabled.checked, endpoint: f.trEndpoint.value.trim(), model: f.trModel.value.trim(), targetLanguage: f.trTarget.value.trim() || 'English', apiKey: f.trKey.value || null };
     await api('/config', { method: 'PUT', body: cfg });
     if (cfg.settings.apiKey) localStorage.setItem('opencom.key', cfg.settings.apiKey); else localStorage.removeItem('opencom.key');
     logStatus({ component: 'settings', ok: true, message: 'saved (OSC port changes need a restart)' });

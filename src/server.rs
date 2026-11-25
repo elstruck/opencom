@@ -60,6 +60,7 @@ pub async fn start(show: PathBuf, host: &str, port: u16) -> Result<Server> {
     }
     let engine = Engine::new(hub.clone());
     engine.start();
+    crate::translate::start(hub.clone());
     // MIDI inputs live as long as the process; leak the connections on purpose.
     {
         let h = hub.clone();

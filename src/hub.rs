@@ -178,6 +178,7 @@ impl Hub {
             started_at: now,
             updated_at: now,
             matched_keywords: vec![],
+            translation: None,
         });
         {
             let mut t = self.transcript.write();
@@ -210,6 +211,18 @@ impl Hub {
         }
         self.emit(Event::EntryUpdated { entry: updated.clone() });
         Some(updated)
+    }
+
+    /// Attach a translation to a final entry.
+    pub fn set_translation(&self, id: Uuid, text: String) -> Option<TranscriptEntry> {
+        let e = {
+            let mut t = self.transcript.write();
+            let e = t.iter_mut().rev().find(|e| e.id == id)?;
+            e.translation = Some(text);
+            e.clone()
+        };
+        self.emit(Event::EntryUpdated { entry: e.clone() });
+        Some(e)
     }
 
     /// Remove an entry (for example, an in-progress entry that ended up empty).

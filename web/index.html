@@ -125,6 +125,13 @@
         <label>API key (blank = no auth) <input name="apiKey" type="password" autocomplete="off"></label>
         <label>History limit <input name="historyLimit" type="number" min="100"></label>
         <label>ProdCom-compatible API port (blank = off, needs restart) <input name="compatPort" type="number" min="1" max="65535" placeholder="24480"></label>
+        <h3 style="grid-column:1/-1;margin-bottom:0">Translation</h3>
+        <p class="hint" style="grid-column:1/-1;margin:0">Translate the final lines of channels marked "translate", through any OpenAI-compatible API: a local llama.cpp, Ollama or LM Studio, or a cloud service.</p>
+        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="trEnabled"> Translation on</label>
+        <label>Translate into <input name="trTarget" placeholder="English"></label>
+        <label>API base URL <input name="trEndpoint" placeholder="http://127.0.0.1:11434/v1"></label>
+        <label>Model <input name="trModel" placeholder="qwen2.5:7b-instruct"></label>
+        <label>API key (if needed) <input name="trKey" type="password" autocomplete="off"></label>
         <button class="primary">Save settings</button>
       </form>
       <h3>Show file</h3>

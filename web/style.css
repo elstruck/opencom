@@ -97,3 +97,4 @@ main { height: calc(100% - 48px); }
 }
 .banner { background: #3a2a10; border-bottom: 1px solid #6b4e1a; color: #ffd98a; padding: 10px 16px; display: flex; gap: 12px; align-items: center; }
 .banner button { margin-left: auto; }
+.msg .tr { color: #9ecbff; font-size: .9em; margin-top: 3px; border-top: 1px dashed var(--line); padding-top: 3px; }

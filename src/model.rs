@@ -66,6 +66,9 @@ pub struct Channel {
     /// Keywords that apply only to this channel.
     #[serde(default)]
     pub keywords: Vec<Keyword>,
+    /// Translate this channel's final lines (needs `settings.translation`).
+    #[serde(default)]
+    pub translate: bool,
 }
 
 fn default_true() -> bool {
@@ -83,6 +86,7 @@ impl Channel {
             typing_enabled: true,
             enabled: true,
             keywords: Vec::new(),
+            translate: false,
         }
     }
 }
@@ -156,6 +160,9 @@ pub struct TranscriptEntry {
     /// Keywords found in the final text.
     #[serde(default)]
     pub matched_keywords: Vec<Uuid>,
+    /// Translation of the final text, when the channel has translation on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -422,6 +429,42 @@ pub struct Settings {
     /// Serve a ProdCom-compatible API on this port (for example 24480). `None` turns it off.
     #[serde(default)]
     pub compat_prodcom_port: Option<u16>,
+    #[serde(default)]
+    pub translation: TranslationSettings,
+}
+
+/// Translation through any OpenAI-compatible chat API (llama.cpp, Ollama, LM Studio, vLLM, OpenAI, ...).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Base URL that ends before `/chat/completions`, for example `http://127.0.0.1:11434/v1`.
+    #[serde(default = "default_tr_endpoint")]
+    pub endpoint: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default = "default_tr_model")]
+    pub model: String,
+    /// Language to translate into, in plain words (for example "English" or "Spanish").
+    #[serde(default = "default_tr_target")]
+    pub target_language: String,
+}
+
+fn default_tr_endpoint() -> String {
+    "http://127.0.0.1:11434/v1".into()
+}
+fn default_tr_model() -> String {
+    "qwen2.5:7b-instruct".into()
+}
+fn default_tr_target() -> String {
+    "English".into()
+}
+
+impl Default for TranslationSettings {
+    fn default() -> Self {
+        Self { enabled: false, endpoint: default_tr_endpoint(), api_key: None, model: default_tr_model(), target_language: default_tr_target() }
+    }
 }
 
 fn default_history() -> usize {
@@ -436,6 +479,7 @@ impl Default for Settings {
             api_key: None,
             history_limit: default_history(),
             compat_prodcom_port: None,
+            translation: TranslationSettings::default(),
         }
     }
 }
