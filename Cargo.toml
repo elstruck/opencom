@@ -20,6 +20,9 @@ default = ["audio", "midi", "stt"]
 audio = ["dep:cpal"]
 # MIDI output (midir).
 midi = ["dep:midir"]
+# Windows ASIO support for pro interfaces (Dante Virtual Soundcard, MADI, ...).
+# Needs the Steinberg ASIO SDK at build time: set CPAL_ASIO_DIR. See README.
+asio = ["audio", "cpal/asio"]
 # Local speech-to-text through sherpa-onnx (Parakeet, Moonshine, Whisper, Zipformer, ...).
 stt = ["dep:sherpa-onnx"]
 

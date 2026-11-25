@@ -70,6 +70,18 @@ cargo build --release -p opencom-desktop
 
 The desktop app runs the same server inside the app, on port 7430 (or a free port if 7430 is taken).
 
+### Windows: ASIO interfaces
+
+WASAPI (the default on Windows) works with most sound cards. Some pro interfaces, such as
+Dante Virtual Soundcard or MADI cards, expose all their channels only through ASIO.
+To build with ASIO:
+
+1. Download the Steinberg ASIO SDK and unpack it.
+2. Set `CPAL_ASIO_DIR` to that folder.
+3. Build with `cargo build --release --features asio`.
+
+ASIO devices then appear in the device list.
+
 ### Linux packages
 
 ```sh
