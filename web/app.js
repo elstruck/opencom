@@ -38,6 +38,24 @@ function toast(msg, bad) {
   if (bad) alert(msg);
 }
 
+// True only while the user is typing in a text field on a setup page. Buttons, checkboxes,
+// selects and color pickers do not count, so clicks re-render at once.
+function isEditing(scope = '.page') {
+  const a = document.activeElement;
+  if (!a || !a.closest(scope)) return false;
+  if (a.tagName === 'TEXTAREA') return true;
+  return a.tagName === 'INPUT' && !['checkbox', 'radio', 'color', 'button', 'submit', 'file', 'range'].includes(a.type);
+}
+// Re-render the open setup page from S.cfg (no device scans).
+function rerenderTab(t) {
+  ({ channels: renderChannelEditors, keywords: renderKeywords, automations: renderAutomations, osc: renderOsc, models: renderModels, settings: renderSettings })[t]?.();
+}
+// A re-render skipped while typing runs as soon as the field loses focus.
+let pendingRender = false;
+document.addEventListener('focusout', () => setTimeout(() => {
+  if (pendingRender && !isEditing()) { pendingRender = false; rerenderTab($('.tabs button.active')?.dataset.tab); }
+}, 0));
+
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
@@ -46,7 +64,7 @@ function showTab(name) {
   $$('.tab').forEach(t => t.classList.toggle('hidden', t.id !== 'tab-' + name));
   location.hash = name === 'live' ? '' : name;
   if (!S.cfg) return;
-  if (name === 'channels') { loadDevices(); loadPeers().then(() => { if (!document.activeElement?.closest('#channelEditors')) renderChannelEditors(); }); renderChannelEditors(); }
+  if (name === 'channels') { loadDevices(); loadPeers().then(() => { if (!isEditing('#channelEditors')) renderChannelEditors(); }); renderChannelEditors(); }
   if (name === 'keywords') renderKeywords();
   if (name === 'automations') renderAutomations();
   if (name === 'osc') renderOsc();
@@ -337,7 +355,10 @@ function renderAll() {
   renderChannelList();
   renderFeed();
   const tab = $('.tabs button.active')?.dataset.tab;
-  if (tab && tab !== 'live' && !document.activeElement?.closest('.page')) showTab(tab);
+  if (tab && tab !== 'live') {
+    if (isEditing()) pendingRender = true;
+    else rerenderTab(tab);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -346,7 +367,7 @@ function renderAll() {
 async function loadDevices() {
   try { S.devices = await api('/audio/devices'); } catch (_) { S.devices = []; }
   $('#deviceSummary').textContent = S.devices.length ? S.devices.map(d => `${d.name} (${d.channels} ch)`).join(', ') : 'none found';
-  if (!document.activeElement?.closest('#channelEditors')) renderChannelEditors();
+  if (!isEditing('#channelEditors')) renderChannelEditors();
 }
 
 function sourceFields(ch) {
@@ -386,7 +407,7 @@ async function loadRemoteChannels(url, key) {
   S.remoteChannels[url] = [];
   try { S.remoteChannels[url] = await api(`/network/channels?url=${encodeURIComponent(url)}${key ? '&key=' + encodeURIComponent(key) : ''}`); }
   catch (e) { logStatus({ component: 'network', ok: false, message: url + ': ' + e.message }); }
-  if (!document.activeElement?.closest('#channelEditors')) renderChannelEditors();
+  if (!isEditing('#channelEditors')) renderChannelEditors();
 }
 
 function renderChannelEditors() {
