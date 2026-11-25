@@ -1,6 +1,7 @@
 //! Per-channel pipeline: audio in, VAD, partial and final transcripts out to the hub.
 
-use super::{Recognizer, Segmenter, SharedRecognizer, SAMPLE_RATE};
+use super::{DecodeGate, Recognizer, Segmenter, SharedRecognizer, SAMPLE_RATE};
+use std::sync::Arc;
 use crate::hub::{Event, SharedHub};
 use crate::model::EntrySource;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -15,14 +16,17 @@ pub enum AudioMsg {
 #[derive(Clone)]
 pub struct PipelineConfig {
     /// Seconds of new speech between partial decodes. 0 turns partials off.
+    /// The interval grows with the utterance length, because each partial decodes the whole utterance.
     pub partial_interval: f32,
     /// Emit level meters (events) this often.
     pub level_interval: Duration,
+    /// Shared across channels to cap CPU use.
+    pub gate: Arc<DecodeGate>,
 }
 
 impl Default for PipelineConfig {
     fn default() -> Self {
-        Self { partial_interval: 0.8, level_interval: Duration::from_millis(100) }
+        Self { partial_interval: 0.8, level_interval: Duration::from_millis(100), gate: DecodeGate::new(64) }
     }
 }
 
@@ -158,10 +162,14 @@ impl ChannelPipeline {
     }
 
     fn maybe_partial(&mut self) {
-        let interval = (self.cfg.partial_interval * SAMPLE_RATE as f32) as usize;
-        if interval == 0 || !self.seg.speaking() || self.since_partial < interval || self.speech.len() < SAMPLE_RATE as usize / 2 {
+        let base = (self.cfg.partial_interval * SAMPLE_RATE as f32) as usize;
+        // Every 4 s of speech doubles the wait between partials.
+        let interval = base * (1 + self.speech.len() / (4 * SAMPLE_RATE as usize));
+        if base == 0 || !self.seg.speaking() || self.since_partial < interval || self.speech.len() < SAMPLE_RATE as usize / 2 {
             return;
         }
+        let gate = self.cfg.gate.clone();
+        let Some(_slot) = gate.try_acquire() else { return };
         self.since_partial = 0;
         let text = match self.rec.transcribe(&self.speech) {
             Ok(t) => t,
@@ -182,7 +190,11 @@ impl ChannelPipeline {
     }
 
     fn finalize(&mut self, seg: &[f32]) {
-        let text = match self.rec.transcribe(seg) {
+        let gate = self.cfg.gate.clone();
+        let slot = gate.acquire();
+        let result = self.rec.transcribe(seg);
+        drop(slot);
+        let text = match result {
             Ok(t) => t,
             Err(e) => {
                 tracing::warn!("decode failed: {e:#}");
@@ -259,7 +271,7 @@ mod tests {
             hub.clone(),
             Arc::new(FixedRecognizer("hello".into())),
             Box::new(EnergySegmenter::new(0.3, 10.0)),
-            PipelineConfig { partial_interval: 0.5, level_interval: Duration::from_secs(100) },
+            PipelineConfig { partial_interval: 0.5, level_interval: Duration::from_secs(100), ..Default::default() },
         );
         let h = std::thread::spawn(move || p.run(arx));
         // Feed in real-time-ish chunks so partials happen.

@@ -356,7 +356,7 @@ fn default_min_silence() -> f32 {
     0.5
 }
 fn default_max_speech() -> f32 {
-    15.0
+    12.0
 }
 
 impl Default for SttSettings {

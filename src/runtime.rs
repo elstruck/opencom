@@ -119,7 +119,7 @@ impl Runtime {
         }
         let rec = inner.rec.as_ref().unwrap().1.clone();
         let make_seg = stt::segmenter_factory(Some(stt::models::vad_path(&sig.stt)), &sig.stt);
-        let pcfg = PipelineConfig { partial_interval: sig.stt.partial_interval, ..Default::default() };
+        let pcfg = PipelineConfig { partial_interval: sig.stt.partial_interval, gate: stt::DecodeGate::for_machine(sig.stt.threads), ..Default::default() };
 
         let mut device_routes: HashMap<Option<String>, Vec<(u16, std::sync::mpsc::Sender<AudioMsg>)>> = HashMap::new();
         for ch in &active {

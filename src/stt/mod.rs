@@ -18,6 +18,54 @@ use std::sync::Arc;
 
 pub const SAMPLE_RATE: u32 = 16_000;
 
+/// Limits how many decodes run at once across all channels.
+/// Final decodes wait for a slot; partial decodes skip when no slot is free,
+/// so a busy machine drops in-progress text instead of falling behind.
+pub struct DecodeGate {
+    max: usize,
+    used: parking_lot::Mutex<usize>,
+    cv: parking_lot::Condvar,
+}
+
+pub struct GateSlot<'a>(&'a DecodeGate);
+
+impl Drop for GateSlot<'_> {
+    fn drop(&mut self) {
+        *self.0.used.lock() -= 1;
+        self.0.cv.notify_one();
+    }
+}
+
+impl DecodeGate {
+    pub fn new(max: usize) -> Arc<Self> {
+        Arc::new(Self { max: max.max(1), used: parking_lot::Mutex::new(0), cv: parking_lot::Condvar::new() })
+    }
+
+    /// A gate sized for this machine: about half the cores, divided by threads per decode.
+    pub fn for_machine(threads_per_decode: i32) -> Arc<Self> {
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+        Self::new((cores / 2 / threads_per_decode.max(1) as usize).max(1))
+    }
+
+    pub fn acquire(&self) -> GateSlot<'_> {
+        let mut u = self.used.lock();
+        while *u >= self.max {
+            self.cv.wait(&mut u);
+        }
+        *u += 1;
+        GateSlot(self)
+    }
+
+    pub fn try_acquire(&self) -> Option<GateSlot<'_>> {
+        let mut u = self.used.lock();
+        if *u >= self.max {
+            return None;
+        }
+        *u += 1;
+        Some(GateSlot(self))
+    }
+}
+
 /// Turns a finished chunk of 16 kHz mono audio into text.
 pub trait Recognizer: Send + Sync {
     fn transcribe(&self, samples: &[f32]) -> Result<String>;
@@ -166,5 +214,20 @@ mod tests {
         let segs = s.accept(&audio);
         assert_eq!(segs.len(), 2);
         assert!(segs[0].len() >= 16000 && segs[0].len() <= 16000 + 6400, "{}", segs[0].len());
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+    #[test]
+    fn gate_limits() {
+        let g = DecodeGate::new(2);
+        let a = g.try_acquire();
+        let b = g.try_acquire();
+        assert!(a.is_some() && b.is_some());
+        assert!(g.try_acquire().is_none());
+        drop(a);
+        assert!(g.try_acquire().is_some());
     }
 }

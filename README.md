@@ -83,6 +83,13 @@ opencom transcribe some-speech.wav --model moonshine-tiny-en-int8
 | `whisper-base.en` | 199 MB | fast | English, Whisper behavior |
 | `whisper-small` | 610 MB | slower | other languages |
 
+**Measured load** (Parakeet v2, 2 threads per decode, 8 channels of *non-stop* speech, 32-thread desktop CPU):
+about 1.3 cores with partial results off and about 4.4 cores with them on.
+Real intercom traffic is mostly silence, so a normal show uses a small part of that.
+A shared decode budget (about half the CPU cores) protects final text. When the machine
+is busy, opencom skips in-progress updates; it never drops final text.
+On a small machine, set **Settings → Partial results every** to 2 s or 0.
+
 Every channel shares the one loaded model. Silent channels cost almost nothing,
 because opencom only decodes audio that its voice detector (Silero VAD) marks as speech.
 
