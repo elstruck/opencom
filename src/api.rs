@@ -40,6 +40,7 @@ impl IntoResponse for ApiError {
             StatusCode::NOT_FOUND => "NOT_FOUND",
             StatusCode::BAD_REQUEST => "BAD_REQUEST",
             StatusCode::UNAUTHORIZED => "UNAUTHORIZED",
+            StatusCode::FORBIDDEN => "FORBIDDEN",
             StatusCode::BAD_GATEWAY => "REMOTE_ERROR",
             _ => "INTERNAL_ERROR",
         };
@@ -204,8 +205,31 @@ pub fn router(state: AppState) -> Router {
         .nest("/api/v1", api)
         .route("/", get(|| async { static_file("index.html") }))
         .route("/{file}", get(|Path(f): Path<String>| async move { static_file(&f) }))
-        .layer(tower_http::cors::CorsLayer::permissive())
+        .layer(middleware::from_fn_with_state(state.clone(), host_guard))
         .with_state(state)
+}
+
+/// True for `localhost`, `*.localhost`, `*.local` (mDNS) and IP literals, with or without a port.
+pub fn safe_host(host: &str) -> bool {
+    let h = if host.starts_with('[') {
+        host.split(']').next().unwrap_or("").trim_start_matches('[')
+    } else {
+        host.rsplit_once(':').map(|(h, p)| if p.chars().all(|c| c.is_ascii_digit()) { h } else { host }).unwrap_or(host)
+    };
+    let h = h.to_ascii_lowercase();
+    h == "localhost" || h.ends_with(".localhost") || h.ends_with(".local") || h.parse::<std::net::IpAddr>().is_ok()
+}
+
+/// Without an API key, refuse requests whose Host header is a domain name. This blocks
+/// DNS-rebinding attacks from web pages; real clients use an IP, `localhost` or `name.local`.
+async fn host_guard(State(s): State<AppState>, headers: HeaderMap, req: Request, next: Next) -> Response {
+    let has_key = s.hub.read(|c| c.settings.api_key.as_deref().map(|k| !k.is_empty()).unwrap_or(false));
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
+    if has_key || host.is_empty() || safe_host(host) {
+        next.run(req).await
+    } else {
+        ApiError(StatusCode::FORBIDDEN, format!("host {host:?} not allowed; set an API key to allow access by host name")).into_response()
+    }
 }
 
 async fn auth(State(s): State<AppState>, headers: HeaderMap, req: Request, next: Next) -> Response {
@@ -667,6 +691,26 @@ mod tests {
         // The UI itself is public.
         let req = axum::http::Request::builder().uri("/").body(Body::empty()).unwrap();
         assert_eq!(app.clone().oneshot(req).await.unwrap().status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn hosts() {
+        for h in ["localhost:7430", "127.0.0.1:7430", "[::1]:7430", "192.168.1.5", "booth.local:7430", "localhost"] {
+            assert!(safe_host(h), "{h}");
+        }
+        for h in ["evil.com", "evil.com:7430", "127.0.0.1.evil.com"] {
+            assert!(!safe_host(h), "{h}");
+        }
+    }
+
+    #[tokio::test]
+    async fn rebinding_blocked() {
+        let (app, hub) = app();
+        let req = axum::http::Request::builder().uri("/api/v1/status").header("host", "evil.example:7430").body(Body::empty()).unwrap();
+        assert_eq!(app.clone().oneshot(req).await.unwrap().status(), StatusCode::FORBIDDEN);
+        hub.update(|c| c.settings.api_key = Some("k".into()));
+        let req = axum::http::Request::builder().uri("/api/v1/status?key=k").header("host", "opencom.example").body(Body::empty()).unwrap();
+        assert_eq!(app.oneshot(req).await.unwrap().status(), StatusCode::OK);
     }
 
     #[tokio::test]

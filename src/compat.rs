@@ -128,8 +128,17 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/osc/send", post(osc_send))
         .route("/api/v1/midi/send", post(midi_send))
         .route("/api/v1/webhooks/{*path}", post(webhook))
-        .layer(tower_http::cors::CorsLayer::permissive())
+        .layer(axum::middleware::from_fn(compat_guard))
         .with_state(state)
+}
+
+async fn compat_guard(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let host = req.headers().get(axum::http::header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    if host.is_empty() || crate::api::safe_host(&host) {
+        next.run(req).await
+    } else {
+        err(StatusCode::FORBIDDEN, "FORBIDDEN", "host not allowed")
+    }
 }
 
 async fn status(State(s): State<AppState>) -> Response {
