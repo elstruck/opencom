@@ -1,0 +1,54 @@
+[package]
+name = "opencom"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Open-source live multi-channel transcription and voice-triggered show control for Windows, Linux and macOS."
+repository = "https://github.com/opencom-project/opencom"
+readme = "README.md"
+keywords = ["transcription", "osc", "midi", "live-production", "intercom"]
+
+[features]
+default = ["audio", "midi", "stt"]
+# Live capture from sound cards (cpal: WASAPI/ASIO, ALSA/PipeWire/JACK, CoreAudio).
+audio = ["dep:cpal"]
+# MIDI output (midir).
+midi = ["dep:midir"]
+# Local speech-to-text through sherpa-onnx (Parakeet, Moonshine, Whisper, Zipformer, ...).
+stt = ["dep:sherpa-onnx"]
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+rosc = "0.11"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+hound = "3"
+rubato = "0.16"
+directories = "6"
+regex = "1"
+parking_lot = "0.12"
+
+cpal = { version = "0.18", optional = true }
+midir = { version = "0.11", optional = true }
+sherpa-onnx = { version = "2.0.3", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[profile.release]
+lto = "thin"
+strip = true
