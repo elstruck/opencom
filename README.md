@@ -35,7 +35,19 @@ or flash an alert on every screen.
 - **OSC input.** Use `/opencom/send <channel> <text>` and `/opencom/alert <text>`. Any address can also trigger an automation.
 - **Show files.** The whole setup is one JSON file that you can save, load and share between venues.
 
-## Quick start
+## Install
+
+Download the desktop app for your system from
+[Releases](https://github.com/elstruck/opencom/releases):
+
+- **Ubuntu / Debian:** `opencom_*.deb`. Install it with `sudo apt install ./opencom_*_amd64.deb`, then open **opencom** from your app menu.
+- **Other Linux:** `opencom_*.AppImage`.
+- **Windows:** `opencom_*-setup.exe`.
+- **macOS:** `opencom_*.dmg`. The app is not signed yet: right-click it and choose **Open** the first time.
+
+On first start, opencom offers to download a speech model.
+
+## Quick start (from source)
 
 ```sh
 # Build (needs Rust: https://rustup.rs)

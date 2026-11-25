@@ -1,0 +1,57 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            bundles: deb,appimage
+          - os: windows-latest
+            bundles: nsis
+          - os: macos-latest
+            bundles: dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Build desktop bundles
+        working-directory: desktop
+        run: cargo tauri build --bundles ${{ matrix.bundles }}
+      - name: Build CLI
+        run: cargo build --release --locked
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          find target/release/bundle -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*-setup.exe' -o -name '*.dmg' \) -exec cp {} dist/ \;
+          os=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+          if [ -f target/release/opencom.exe ]; then cp target/release/opencom.exe "dist/opencom-cli-$os.exe"; else cp target/release/opencom "dist/opencom-cli-$os"; fi
+          ls -la dist
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencom-${{ runner.os }}
+          path: dist/*
