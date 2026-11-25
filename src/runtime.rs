@@ -48,6 +48,27 @@ impl Runtime {
     pub fn start(self: &Arc<Self>) {
         let me = self.clone();
         tokio::task::spawn_blocking(move || me.rebuild_if_changed());
+        // Retry failed parts (unplugged device, model downloaded later) every 10 s.
+        let me = self.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                let retry = {
+                    let mut inner = me.inner.lock();
+                    let has = !inner.errors.is_empty();
+                    if has {
+                        inner.sig = None;
+                    }
+                    has
+                };
+                if retry {
+                    let m = me.clone();
+                    let _ = tokio::task::spawn_blocking(move || m.rebuild_if_changed()).await;
+                }
+            }
+        });
         let me = self.clone();
         let mut rx = self.hub.subscribe();
         tokio::spawn(async move {
