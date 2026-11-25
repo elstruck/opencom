@@ -141,7 +141,7 @@ where
                 let mut cfg = s.hub.config();
                 let v = acc(&mut cfg);
                 let i = find_index(v, &id).ok_or_else(|| not_found("item"))?;
-                let mut cur = serde_json::to_value(&v[i]).map_err(|e| bad(e))?;
+                let mut cur = serde_json::to_value(&v[i]).map_err(bad)?;
                 let keep_id = v[i].id();
                 merge(&mut cur, patch);
                 cur["id"] = json!(keep_id);

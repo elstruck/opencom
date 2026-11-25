@@ -7,8 +7,10 @@ use uuid::Uuid;
 /// Where a channel gets its audio from.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ChannelSource {
     /// No audio. The channel only carries typed and automation messages.
+    #[default]
     None,
     /// One input channel of a local sound card.
     #[serde(rename_all = "camelCase")]
@@ -38,11 +40,6 @@ pub enum ChannelSource {
     },
 }
 
-impl Default for ChannelSource {
-    fn default() -> Self {
-        ChannelSource::None
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

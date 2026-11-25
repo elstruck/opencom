@@ -253,7 +253,7 @@ mod device {
             }
             let mut all = Vec::new();
             for host_id in cpal::available_hosts() {
-                if let Ok(devs) = cpal::host_from_id(host_id).and_then(|h| h.input_devices().map_err(Into::into)) {
+                if let Ok(devs) = cpal::host_from_id(host_id).and_then(|h| h.input_devices()) {
                     all.extend(devs);
                 }
             }
