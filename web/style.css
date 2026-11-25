@@ -95,3 +95,5 @@ main { height: calc(100% - 48px); }
   .sidebar { width: 150px; } .show-name { display: none; } .settings { grid-template-columns: 1fr; }
   .msg { grid-template-columns: 1fr; gap: 2px; }
 }
+.banner { background: #3a2a10; border-bottom: 1px solid #6b4e1a; color: #ffd98a; padding: 10px 16px; display: flex; gap: 12px; align-items: center; }
+.banner button { margin-left: auto; }

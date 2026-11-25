@@ -279,7 +279,7 @@ function onEvent(ev) {
       break;
     }
     case 'oscReceived': logOsc(ev); break;
-    case 'status': logStatus(ev); if (ev.component === 'download' && /installed/.test(ev.message)) renderModels(); else if (ev.component === 'download') updateDownload(ev.message); break;
+    case 'status': logStatus(ev); if (ev.component === 'download' || ev.component === 'stt') setTimeout(checkBanner, 500); if (ev.component === 'download' && /installed/.test(ev.message)) renderModels(); else if (ev.component === 'download') updateDownload(ev.message); break;
     case 'automationFired': logStatus({ component: 'automation', ok: true, message: `${ev.name} (${ev.cause})` }); break;
   }
 }
@@ -300,6 +300,25 @@ function logOsc(ev) {
   while (el.childNodes.length > 100) el.lastChild.remove();
 }
 
+async function checkBanner() {
+  const b = $('#banner');
+  try {
+    const [st, m] = await Promise.all([api('/status'), api('/models')]);
+    const active = m.models.find(x => x.active);
+    const hasAudio = S.cfg.channels.some(c => c.enabled !== false && ['device', 'file'].includes(c.source?.kind));
+    if (hasAudio && active && !active.installed) {
+      b.innerHTML = `<span>The speech model <b>${esc(active.name)}</b> (${active.downloadMb} MB) is not installed yet, so audio channels are not transcribed.</span><button class="primary" id="bannerDl">Download now</button>`;
+      b.classList.remove('hidden');
+      $('#bannerDl').onclick = async () => { $('#bannerDl').disabled = true; $('#bannerDl').textContent = 'Downloading…'; await api(`/models/${active.id}/download`, { method: 'POST' }); };
+    } else if (Object.keys(st.errors || {}).length) {
+      b.innerHTML = `<span>${Object.values(st.errors).map(esc).join('<br>')}</span><button id="bannerSettings">Details</button>`;
+      b.classList.remove('hidden');
+      $('#bannerSettings').onclick = () => showTab('settings');
+    } else b.classList.add('hidden');
+  } catch (_) {}
+}
+setInterval(() => { if (S.cfg) checkBanner(); }, 10000);
+
 async function reload() {
   S.cfg = await api('/config');
   const t = await api('/transcript?limit=2000');
@@ -308,6 +327,7 @@ async function reload() {
   renderAll();
   const st = await api('/status');
   for (const [k, v] of Object.entries(st.errors || {})) logStatus({ component: k, ok: false, message: v });
+  checkBanner();
 }
 
 function renderAll() {
@@ -641,6 +661,8 @@ function updateDownload(msg) {
     const name = $('h4', card).textContent;
     if (msg.startsWith(name)) $('.dl', card).textContent = msg.slice(name.length + 2);
   }
+  const bd = $('#bannerDl');
+  if (bd) bd.textContent = 'Downloading… ' + (msg.split(': ')[1] || '');
 }
 $('#modelList').addEventListener('click', async ev => {
   const card = ev.target.closest('.card');
