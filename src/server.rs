@@ -21,6 +21,7 @@ pub struct Server {
     pub hub: SharedHub,
     pub runtime: Arc<Runtime>,
     pub addr: SocketAddr,
+    pub network: crate::network::SharedNetwork,
     shutdown: Option<tokio::sync::oneshot::Sender<()>>,
     task: Option<tokio::task::JoinHandle<()>>,
 }
@@ -39,6 +40,7 @@ impl Server {
         if let Some(t) = self.task.take() {
             let _ = t.await;
         }
+        self.network.stop();
         let rt = self.runtime.clone();
         tokio::task::spawn_blocking(move || rt.stop()).await?;
         self.hub.save()
@@ -69,9 +71,14 @@ pub async fn start(show: PathBuf, host: &str, port: u16) -> Result<Server> {
             }
         });
     }
-    let app = router(AppState { hub: hub.clone(), engine, runtime: Some(runtime.clone()), started: Instant::now() });
     let listener = tokio::net::TcpListener::bind((host, port)).await.with_context(|| format!("binding {host}:{port}"))?;
     let addr = listener.local_addr()?;
+    let network = crate::network::Network::new();
+    let advertise = !addr.ip().is_loopback();
+    if let Err(e) = network.start(addr.port(), &hub.read(|c| c.name.clone()), advertise) {
+        tracing::warn!("LAN discovery disabled: {e:#}");
+    }
+    let app = router(AppState { hub: hub.clone(), engine, runtime: Some(runtime.clone()), network: Some(network.clone()), started: Instant::now() });
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let task = tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, app)
@@ -83,5 +90,5 @@ pub async fn start(show: PathBuf, host: &str, port: u16) -> Result<Server> {
             tracing::error!("HTTP server stopped: {e}");
         }
     });
-    Ok(Server { hub, runtime, addr, shutdown: Some(tx), task: Some(task) })
+    Ok(Server { hub, runtime, addr, network, shutdown: Some(tx), task: Some(task) })
 }

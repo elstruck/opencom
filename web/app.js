@@ -46,7 +46,7 @@ function showTab(name) {
   $$('.tab').forEach(t => t.classList.toggle('hidden', t.id !== 'tab-' + name));
   location.hash = name === 'live' ? '' : name;
   if (!S.cfg) return;
-  if (name === 'channels') { loadDevices(); renderChannelEditors(); }
+  if (name === 'channels') { loadDevices(); loadPeers().then(() => { if (!document.activeElement?.closest('#channelEditors')) renderChannelEditors(); }); renderChannelEditors(); }
   if (name === 'keywords') renderKeywords();
   if (name === 'automations') renderAutomations();
   if (name === 'osc') renderOsc();
@@ -341,9 +341,32 @@ function sourceFields(ch) {
       <option value="none" ${s.kind === 'none' ? 'selected' : ''}>No audio (typed only)</option>
       <option value="device" ${s.kind === 'device' ? 'selected' : ''}>Sound card input</option>
       <option value="file" ${s.kind === 'file' ? 'selected' : ''}>WAV file (test)</option>
+      <option value="remote" ${s.kind === 'remote' ? 'selected' : ''}>Another opencom (network)</option>
     </select>
     ${s.kind === 'device' ? `<select data-f="source.device">${devOpts.join('')}</select><select data-f="source.channelIndex">${chOpts}</select>` : ''}
-    ${s.kind === 'file' ? `<input class="grow" data-f="source.path" placeholder="/path/to/file.wav" value="${esc(s.path || '')}"><label><input type="checkbox" data-f="source.looped" ${s.looped ? 'checked' : ''}> loop</label>` : ''}`;
+    ${s.kind === 'file' ? `<input class="grow" data-f="source.path" placeholder="/path/to/file.wav" value="${esc(s.path || '')}"><label><input type="checkbox" data-f="source.looped" ${s.looped ? 'checked' : ''}> loop</label>` : ''}
+    ${s.kind === 'remote' ? remoteFields(ch, s) : ''}`;
+}
+
+S.peers = [];
+S.remoteChannels = {}; // url -> [{id,name}]
+function remoteFields(ch, s) {
+  const peerOpts = ['<option value="">— found on network —</option>', ...S.peers.map(p => `<option value="${esc(p.url)}" ${p.url === s.url ? 'selected' : ''}>${esc(p.name)}${p.show ? ' · ' + esc(p.show) : ''}</option>`)];
+  const list = S.remoteChannels[s.url];
+  const chOpts = list ? list.map(c => `<option value="${esc(c.name)}" ${c.name === s.channel || c.id === s.channel ? 'selected' : ''}>${esc(c.name)}</option>`).join('') : `<option>${esc(s.channel || '(enter URL first)')}</option>`;
+  if (s.url && !list) loadRemoteChannels(s.url, s.key);
+  if (list?.length && !s.channel) setTimeout(() => api('/channels/' + ch.id, { method: 'PUT', body: { source: { ...s, channel: list[0].name } } }), 0);
+  return `<select data-f="source.peer">${peerOpts.join('')}</select>
+    <input class="grow" data-f="source.url" placeholder="http://192.168.1.20:7430" value="${esc(s.url || '')}">
+    <input data-f="source.key" type="password" placeholder="API key (if any)" value="${esc(s.key || '')}" size="12">
+    <select data-f="source.channel">${chOpts}</select>`;
+}
+async function loadPeers() { try { S.peers = await api('/network/peers'); } catch (_) { S.peers = []; } }
+async function loadRemoteChannels(url, key) {
+  S.remoteChannels[url] = [];
+  try { S.remoteChannels[url] = await api(`/network/channels?url=${encodeURIComponent(url)}${key ? '&key=' + encodeURIComponent(key) : ''}`); }
+  catch (e) { logStatus({ component: 'network', ok: false, message: url + ': ' + e.message }); }
+  if (!document.activeElement?.closest('#channelEditors')) renderChannelEditors();
 }
 
 function renderChannelEditors() {
@@ -370,12 +393,15 @@ $('#channelEditors').addEventListener('change', async ev => {
   if (f === 'source.channelIndex') v = +v;
   if (f.startsWith('source.')) {
     const k = f.slice(7);
-    if (k === 'kind') ch.source = v === 'device' ? { kind: 'device', device: null, channelIndex: 0 } : v === 'file' ? { kind: 'file', path: '', looped: true } : { kind: 'none' };
+    if (k === 'kind') ch.source = v === 'device' ? { kind: 'device', device: null, channelIndex: 0 } : v === 'file' ? { kind: 'file', path: '', looped: true } : v === 'remote' ? { kind: 'remote', url: '', channel: '', key: null } : { kind: 'none' };
+    else if (k === 'peer') { if (!v) return; ch.source.url = v; delete S.remoteChannels[v]; }
+    else if (k === 'url') { ch.source.url = v.trim().replace(/\/+$/, ''); delete S.remoteChannels[ch.source.url]; }
+    else if (k === 'key') ch.source.key = v || null;
     else ch.source[k] = k === 'device' && v === '' ? null : v;
   } else ch[f] = v;
   try { await api('/channels/' + ch.id, { method: 'PUT', body: ch }); }
   catch (e) { toast(e.message, true); }
-  if (f === 'source.kind' || f === 'source.device') setTimeout(renderChannelEditors, 300);
+  if (['source.kind', 'source.device', 'source.peer', 'source.url', 'source.key'].includes(f)) setTimeout(renderChannelEditors, 300);
 });
 $('#channelEditors').addEventListener('click', async ev => {
   if (ev.target.dataset.act !== 'del') return;

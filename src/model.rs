@@ -25,6 +25,17 @@ pub enum ChannelSource {
         #[serde(default)]
         looped: bool,
     },
+    /// Mirror a channel from another opencom server on the network.
+    #[serde(rename_all = "camelCase")]
+    Remote {
+        /// Base URL, for example `http://192.168.1.20:7430`.
+        url: String,
+        /// Remote channel ID or name.
+        channel: String,
+        /// API key of the remote server, if it has one.
+        #[serde(default)]
+        key: Option<String>,
+    },
 }
 
 impl Default for ChannelSource {

@@ -26,11 +26,13 @@ fn signature(hub: &SharedHub) -> Signature {
 pub struct Runtime {
     hub: SharedHub,
     inner: Mutex<Inner>,
+    tokio: tokio::runtime::Handle,
 }
 
 #[derive(Default)]
 struct Inner {
     captures: Vec<Capture>,
+    remotes: Vec<tokio::task::JoinHandle<()>>,
     pipelines: Vec<std::thread::JoinHandle<()>>,
     rec: Option<(String, SharedRecognizer)>,
     sig: Option<Signature>,
@@ -39,7 +41,7 @@ struct Inner {
 
 impl Runtime {
     pub fn new(hub: SharedHub) -> Arc<Self> {
-        Arc::new(Self { hub, inner: Mutex::new(Inner::default()) })
+        Arc::new(Self { hub, inner: Mutex::new(Inner::default()), tokio: tokio::runtime::Handle::current() })
     }
 
     /// Start captures now and keep them in sync with config changes.
@@ -88,13 +90,27 @@ impl Runtime {
         // Stop everything: dropping captures ends their threads and closes senders,
         // which ends the pipelines.
         inner.captures.clear();
+        for h in inner.remotes.drain(..) {
+            h.abort();
+        }
         for h in inner.pipelines.drain(..) {
             let _ = h.join();
         }
         inner.errors.clear();
         inner.sig = Some(sig.clone());
 
-        let active: Vec<_> = self.hub.read(|c| c.channels.iter().filter(|ch| ch.enabled && ch.source != ChannelSource::None).cloned().collect());
+        // Remote (network) channels need no speech model.
+        let remotes: Vec<_> = self.hub.read(|c| c.channels.iter().filter(|ch| ch.enabled && matches!(ch.source, ChannelSource::Remote { .. })).cloned().collect());
+        for ch in remotes {
+            if let ChannelSource::Remote { url, channel, key } = ch.source {
+                let hub = self.hub.clone();
+                inner.remotes.push(self.tokio.spawn(crate::network::mirror(hub, ch.id, url, channel, key)));
+            }
+        }
+
+        let active: Vec<_> = self.hub.read(|c| {
+            c.channels.iter().filter(|ch| ch.enabled && matches!(ch.source, ChannelSource::Device { .. } | ChannelSource::File { .. })).cloned().collect()
+        });
         if active.is_empty() {
             return;
         }
@@ -142,7 +158,7 @@ impl Runtime {
                         self.status("audio", false, msg);
                     }
                 },
-                ChannelSource::None => {}
+                ChannelSource::None | ChannelSource::Remote { .. } => {}
             }
         }
         for (dev, routes) in device_routes {
@@ -164,6 +180,9 @@ impl Runtime {
     pub fn stop(&self) {
         let mut inner = self.inner.lock();
         inner.captures.clear();
+        for h in inner.remotes.drain(..) {
+            h.abort();
+        }
         for h in inner.pipelines.drain(..) {
             let _ = h.join();
         }

@@ -25,6 +25,9 @@ or flash an alert on every screen.
   - Actions: OSC, MIDI, HTTP request, post text into a channel, full-screen alert, UI commands, delay.
   - Policies: restart if running, ignore if running, run in parallel. An optional cooldown limits repeat firing.
 - **Typed messages.** Anyone can type into a channel. This lets FOH reply without talking.
+- **Network channels.** A channel can mirror a channel from another opencom on the LAN.
+  opencom finds the other machines through mDNS. Typed replies go back to the machine that owns the channel.
+- **Desktop app.** A Tauri shell (`desktop/`) with a tray menu and an always-on-top option.
 - **Web UI.** Any browser on the network can follow the show. The `serve` command starts it.
 - **HTTP + WebSocket + SSE API** for Bitfocus Companion, Stream Deck, scripts and custom dashboards.
 - **OSC input.** Use `/opencom/send <channel> <text>` and `/opencom/alert <text>`. Any address can also trigger an automation.
@@ -56,6 +59,16 @@ opencom serve --host 0.0.0.0 --port 7430
 
 Set an API key in **Settings** first. Clients then pass it as `Authorization: Bearer <key>`
 or as `?key=<key>` in the URL.
+
+### Desktop app
+
+```sh
+# Linux also needs: libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+cargo build --release -p opencom-desktop
+./target/release/opencom-desktop
+```
+
+The desktop app runs the same server inside the app, on port 7430 (or a free port if 7430 is taken).
 
 ### Linux packages
 
@@ -141,8 +154,6 @@ sound card ──► capture thread ──► per-channel resample to 16 kHz
 
 ## Roadmap
 
-- Desktop app shell (Tauri) with a tray icon and an always-on-top window
-- Sharing channels between opencom machines on the LAN (mDNS)
 - Translation of channels into the reader's language
 - Streaming (word-by-word) models such as Zipformer
 - MIDI input triggers

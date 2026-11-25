@@ -43,6 +43,9 @@ hound = "3"
 bzip2 = { version = "0.5", default-features = false, features = ["libbz2-rs-sys"] }
 tar = "0.4"
 directories = "6"
+tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
+mdns-sd = "0.22"
+hostname = "0.4"
 parking_lot = "0.12"
 
 cpal = { version = "0.18", optional = true }

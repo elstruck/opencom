@@ -24,6 +24,7 @@ pub struct AppState {
     pub hub: SharedHub,
     pub engine: SharedEngine,
     pub runtime: Option<Arc<Runtime>>,
+    pub network: Option<crate::network::SharedNetwork>,
     pub started: Instant,
 }
 
@@ -39,6 +40,7 @@ impl IntoResponse for ApiError {
             StatusCode::NOT_FOUND => "NOT_FOUND",
             StatusCode::BAD_REQUEST => "BAD_REQUEST",
             StatusCode::UNAUTHORIZED => "UNAUTHORIZED",
+            StatusCode::BAD_GATEWAY => "REMOTE_ERROR",
             _ => "INTERNAL_ERROR",
         };
         (self.0, Json(json!({ "error": { "code": code, "message": self.1 } }))).into_response()
@@ -183,6 +185,8 @@ pub fn router(state: AppState) -> Router {
         .route("/midi/ports", get(midi_ports))
         .route("/midi/send", post(midi_send))
         .route("/audio/devices", get(audio_devices))
+        .route("/network/peers", get(network_peers))
+        .route("/network/channels", get(network_channels))
         .route("/models", get(models_list))
         .route("/models/{id}/download", post(model_download))
         .route("/transcript", get(transcript))
@@ -294,7 +298,37 @@ async fn channel_send(State(s): State<AppState>, Path(id): Path<String>, Json(b)
     if b.text.trim().is_empty() {
         return Err(bad("text is empty"));
     }
+    if let ChannelSource::Remote { url, channel, key } = &ch.source {
+        // The remote server owns this channel; our mirror shows the message when it comes back.
+        crate::network::send_remote(url, key.as_deref(), channel, &b.text).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, format!("{e:#}")))?;
+        return Ok(Json(TranscriptEntry {
+            id: Uuid::nil(),
+            channel_id: ch.id,
+            text: b.text,
+            source: EntrySource::Typed,
+            in_progress: false,
+            seen: true,
+            started_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            matched_keywords: vec![],
+        }));
+    }
     Ok(Json(s.hub.add_entry(ch.id, b.text, EntrySource::Typed, false)))
+}
+
+async fn network_peers(State(s): State<AppState>) -> Json<Vec<crate::network::Peer>> {
+    Json(s.network.as_ref().map(|n| n.peers()).unwrap_or_default())
+}
+
+#[derive(Deserialize)]
+struct RemoteQuery {
+    url: String,
+    #[serde(default)]
+    key: Option<String>,
+}
+
+async fn network_channels(Query(q): Query<RemoteQuery>) -> ApiResult<Json<Vec<crate::network::RemoteChannel>>> {
+    crate::network::list_remote_channels(&q.url, q.key.as_deref()).await.map(Json).map_err(|e| ApiError(StatusCode::BAD_GATEWAY, format!("{e:#}")))
 }
 
 async fn channel_clear(State(s): State<AppState>, Path(id): Path<String>) -> ApiResult<StatusCode> {
@@ -564,7 +598,7 @@ mod tests {
     fn app() -> (Router, SharedHub) {
         let hub = Hub::new(ShowConfig::default(), None);
         let engine = Engine::new(hub.clone());
-        (router(AppState { hub: hub.clone(), engine, runtime: None, started: Instant::now() }), hub)
+        (router(AppState { hub: hub.clone(), engine, runtime: None, network: None, started: Instant::now() }), hub)
     }
 
     async fn call(app: &Router, method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
