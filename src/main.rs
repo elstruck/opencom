@@ -44,6 +44,9 @@ enum Cmd {
         model: Option<String>,
         #[arg(long, default_value_t = 2)]
         threads: i32,
+        /// Two-pass: streaming model for live text, `--model` for final text.
+        #[arg(long)]
+        partial_model: Option<String>,
     },
 }
 
@@ -99,11 +102,11 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Cmd::Transcribe { file, model, threads } => transcribe(file, model, threads).await,
+        Cmd::Transcribe { file, model, threads, partial_model } => transcribe(file, model, threads, partial_model).await,
     }
 }
 
-async fn transcribe(file: PathBuf, model: Option<String>, threads: i32) -> Result<()> {
+async fn transcribe(file: PathBuf, model: Option<String>, threads: i32, partial_model: Option<String>) -> Result<()> {
     let mut sttc = opencom::model::SttSettings { threads, partial_interval: 0.0, ..Default::default() };
     if let Some(m) = model {
         sttc.model = m;
@@ -111,8 +114,8 @@ async fn transcribe(file: PathBuf, model: Option<String>, threads: i32) -> Resul
     catalog::find(&sttc.model).with_context(|| format!("unknown model {}", sttc.model))?;
     let vad = models::ensure_vad(&sttc).await.ok();
     let t0 = Instant::now();
-    let rec = stt::load_recognizer(&sttc)?;
-    eprintln!("Loaded {} in {:.2}s", rec.name(), t0.elapsed().as_secs_f32());
+    let engine = stt::load_engine(&sttc)?;
+    eprintln!("Loaded {} in {:.2}s", engine.name(), t0.elapsed().as_secs_f32());
     let audio = opencom::audio::read_wav_mono_16k(&file.to_string_lossy())?;
     let dur = audio.len() as f32 / stt::SAMPLE_RATE as f32;
 
@@ -121,14 +124,35 @@ async fn transcribe(file: PathBuf, model: Option<String>, threads: i32) -> Resul
     let ch_id = ch.id;
     cfg.channels.push(ch);
     let hub = Hub::new(cfg, None);
-    let seg = stt::segmenter_factory(vad, &sttc)();
-    let mut p = stt::ChannelPipeline::new(ch_id, hub.clone(), rec, seg, stt::PipelineConfig { partial_interval: 0.0, ..Default::default() });
     let t1 = Instant::now();
-    for c in audio.chunks(1600) {
-        p.feed(c);
+    match engine {
+        stt::Engine::Offline(rec) if partial_model.is_some() => {
+            let mut pc = sttc.clone();
+            pc.model = partial_model.clone().unwrap();
+            let stt::Engine::Streaming(sr) = stt::load_engine(&pc)? else { anyhow::bail!("partial model must be a streaming model") };
+            let mut p = stt::StreamingPipeline::new(ch_id, hub.clone(), sr.session(), Default::default()).with_final(rec);
+            for c in audio.chunks(1600) {
+                p.feed(c);
+            }
+            p.finish();
+        }
+        stt::Engine::Offline(rec) => {
+            let seg = stt::segmenter_factory(vad, &sttc)();
+            let mut p = stt::ChannelPipeline::new(ch_id, hub.clone(), rec, seg, stt::PipelineConfig { partial_interval: 0.0, ..Default::default() });
+            for c in audio.chunks(1600) {
+                p.feed(c);
+            }
+            p.feed(&vec![0.0; stt::SAMPLE_RATE as usize]);
+            p.finish();
+        }
+        stt::Engine::Streaming(sr) => {
+            let mut p = stt::StreamingPipeline::new(ch_id, hub.clone(), sr.session(), Default::default());
+            for c in audio.chunks(1600) {
+                p.feed(c);
+            }
+            p.finish();
+        }
     }
-    p.feed(&vec![0.0; stt::SAMPLE_RATE as usize]);
-    p.finish();
     let took = t1.elapsed().as_secs_f32();
     for e in hub.transcript().iter().filter(|e| e.source == EntrySource::Audio) {
         println!("{}", e.text);

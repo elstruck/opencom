@@ -358,6 +358,11 @@ pub struct SttSettings {
     /// Seconds between partial (in-progress) results while someone speaks. 0 turns partials off.
     #[serde(default = "default_partial")]
     pub partial_interval: f32,
+    /// Optional streaming model for live (in-progress) text. When set and `model` is an
+    /// offline model, opencom runs two passes: the streaming model shows words live and finds
+    /// the end of each utterance; `model` then decodes the utterance once for the final text.
+    #[serde(default)]
+    pub partial_model: Option<String>,
     /// Silero VAD speech threshold, 0..1.
     #[serde(default = "default_vad_threshold")]
     pub vad_threshold: f32,
@@ -390,6 +395,7 @@ impl Default for SttSettings {
         Self {
             model: "parakeet-tdt-0.6b-v2-int8".into(),
             models_dir: None,
+            partial_model: None,
             threads: default_threads(),
             partial_interval: default_partial(),
             vad_threshold: default_vad_threshold(),

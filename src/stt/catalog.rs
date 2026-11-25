@@ -11,6 +11,8 @@ pub const VAD_FILE: &str = "silero_vad.onnx";
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ModelKind {
+    /// Streaming (online) transducer: emits words as it hears them; no VAD needed.
+    StreamingTransducer,
     NemoTransducer,
     Moonshine,
     Whisper,
@@ -42,6 +44,36 @@ impl ModelSpec {
 }
 
 pub const MODELS: &[ModelSpec] = &[
+    ModelSpec {
+        id: "zipformer-streaming-en-2023-06-26",
+        name: "Zipformer streaming (English)",
+        description: "Shows words while people speak, at a low CPU cost. Less accurate than Parakeet; no punctuation.",
+        kind: ModelKind::StreamingTransducer,
+        dir: "sherpa-onnx-streaming-zipformer-en-2023-06-26",
+        download_mb: 296,
+        languages: "en",
+        files: &[
+            ("encoder", "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx"),
+            ("decoder", "decoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx"),
+            ("joiner", "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx"),
+            ("tokens", "tokens.txt"),
+        ],
+    },
+    ModelSpec {
+        id: "zipformer-streaming-en-20m",
+        name: "Zipformer streaming 20M (English, tiny)",
+        description: "The smallest streaming model. For very weak machines or very many channels.",
+        kind: ModelKind::StreamingTransducer,
+        dir: "sherpa-onnx-streaming-zipformer-en-20M-2023-02-17",
+        download_mb: 122,
+        languages: "en",
+        files: &[
+            ("encoder", "encoder-epoch-99-avg-1.int8.onnx"),
+            ("decoder", "decoder-epoch-99-avg-1.int8.onnx"),
+            ("joiner", "joiner-epoch-99-avg-1.int8.onnx"),
+            ("tokens", "tokens.txt"),
+        ],
+    },
     ModelSpec {
         id: "parakeet-tdt-0.6b-v2-int8",
         name: "Parakeet TDT 0.6B v2 (English)",

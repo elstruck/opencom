@@ -298,10 +298,197 @@ mod tests {
         assert!(saw_partial, "expected an in-progress entry first");
     }
 
+    /// Fake streaming session: "words" while the input is loud, endpoint after 0.5 s of quiet.
+    struct FakeSession {
+        text: String,
+        quiet: usize,
+    }
+    impl crate::stt::StreamSession for FakeSession {
+        fn accept(&mut self, samples: &[f32]) {
+            let loud = samples.iter().any(|s| s.abs() > 0.1);
+            if loud {
+                self.text = "streaming words".into();
+                self.quiet = 0;
+            } else {
+                self.quiet += samples.len();
+            }
+        }
+        fn text(&self) -> String {
+            self.text.clone()
+        }
+        fn is_endpoint(&self) -> bool {
+            !self.text.is_empty() && self.quiet >= 8000
+        }
+        fn reset(&mut self) {
+            self.text.clear();
+            self.quiet = 0;
+        }
+    }
+
+    #[test]
+    fn two_pass_uses_final_model() {
+        let mut cfg = ShowConfig::default();
+        let ch = Channel::new("A");
+        let id = ch.id;
+        cfg.channels.push(ch);
+        let hub = Hub::new(cfg, None);
+        let mut p = StreamingPipeline::new(id, hub.clone(), Box::new(FakeSession { text: String::new(), quiet: 0 }), PipelineConfig::default())
+            .with_final(Arc::new(FixedRecognizer("final".into())));
+        let mut audio = vec![0.0; 8000];
+        audio.extend(tone(1.0));
+        audio.extend(vec![0.0; 16000]);
+        for c in audio.chunks(1600) {
+            p.feed(c);
+        }
+        let t = hub.transcript();
+        assert_eq!(t.len(), 1, "{t:?}");
+        assert!(!t[0].in_progress);
+        // Final text comes from the offline model, and covers the speech plus pre-roll.
+        assert!(t[0].text.starts_with("final"), "{}", t[0].text);
+        let secs: f32 = t[0].text.split_whitespace().nth(1).unwrap().parse().unwrap();
+        assert!(secs >= 1.4, "audio too short: {secs}");
+    }
+
     #[test]
     fn clean_drops_noise() {
         assert_eq!(clean(" . "), "");
         assert_eq!(clean("[BLANK_AUDIO]"), "");
         assert_eq!(clean("Go."), "Go.");
+    }
+}
+
+/// Pipeline for streaming models: text appears as it is decoded, and the model's own
+/// endpoint detection ends each utterance.
+pub struct StreamingPipeline {
+    pub channel_id: Uuid,
+    hub: SharedHub,
+    session: Box<dyn super::StreamSession>,
+    /// Two-pass mode: decode each finished utterance again with this model.
+    final_rec: Option<SharedRecognizer>,
+    audio: Vec<f32>,
+    pre_roll: std::collections::VecDeque<f32>,
+    cfg: PipelineConfig,
+    entry: Option<Uuid>,
+    last_text: String,
+    last_level: Instant,
+    level_acc: (f32, usize),
+}
+
+impl StreamingPipeline {
+    pub fn new(channel_id: Uuid, hub: SharedHub, session: Box<dyn super::StreamSession>, cfg: PipelineConfig) -> Self {
+        Self {
+            channel_id,
+            hub,
+            session,
+            final_rec: None,
+            audio: Vec::new(),
+            pre_roll: Default::default(),
+            cfg,
+            entry: None,
+            last_text: String::new(),
+            last_level: Instant::now(),
+            level_acc: (0.0, 0),
+        }
+    }
+
+    /// Use `rec` for the final text of every utterance (two-pass mode).
+    pub fn with_final(mut self, rec: SharedRecognizer) -> Self {
+        self.final_rec = Some(rec);
+        self
+    }
+
+    pub fn run(mut self, rx: Receiver<AudioMsg>) {
+        loop {
+            match rx.recv_timeout(Duration::from_secs(3)) {
+                Ok(AudioMsg::Samples(s)) => self.feed(&s),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    let name = self.hub.channel(self.channel_id).map(|c| c.name).unwrap_or_default();
+                    self.hub.emit(Event::Status { component: "audio".into(), ok: false, message: format!("{name}: no audio for 3 s") });
+                }
+                Ok(AudioMsg::End) | Err(_) => break,
+            }
+        }
+        self.finish();
+    }
+
+    pub fn feed(&mut self, samples: &[f32]) {
+        self.level_acc.0 += samples.iter().map(|s| s * s).sum::<f32>();
+        self.level_acc.1 += samples.len();
+        self.session.accept(samples);
+        let text = super::sentence_case(&self.session.text());
+        if self.final_rec.is_some() {
+            if text.is_empty() && self.entry.is_none() {
+                // Not in an utterance yet: keep a short pre-roll.
+                self.pre_roll.extend(samples.iter().copied());
+                let max = (1.2 * SAMPLE_RATE as f32) as usize;
+                while self.pre_roll.len() > max {
+                    self.pre_roll.pop_front();
+                }
+            } else {
+                if self.audio.is_empty() {
+                    self.audio.extend(self.pre_roll.drain(..));
+                }
+                self.audio.extend_from_slice(samples);
+            }
+        }
+        if self.last_level.elapsed() >= self.cfg.level_interval && self.level_acc.1 > 0 {
+            let rms = (self.level_acc.0 / self.level_acc.1 as f32).sqrt();
+            self.hub.emit(Event::Level { channel_id: self.channel_id, rms, speaking: !text.is_empty() });
+            self.level_acc = (0.0, 0);
+            self.last_level = Instant::now();
+        }
+        if !text.is_empty() && text != self.last_text {
+            match self.entry {
+                Some(id) => {
+                    self.hub.update_entry(id, text.clone(), true);
+                }
+                None => self.entry = Some(self.hub.add_entry(self.channel_id, text.clone(), EntrySource::Audio, true).id),
+            }
+            self.last_text = text;
+        }
+        if self.session.is_endpoint() {
+            self.end_utterance();
+        }
+    }
+
+    fn end_utterance(&mut self) {
+        let mut text = clean(&self.last_text);
+        if let (Some(rec), false) = (&self.final_rec, self.audio.is_empty() || text.is_empty()) {
+            let slot = self.cfg.gate.acquire();
+            match rec.transcribe(&self.audio) {
+                Ok(t) if !clean(&t).is_empty() => text = clean(&t),
+                Ok(_) => {}
+                Err(e) => tracing::warn!("final decode failed: {e:#}"),
+            }
+            drop(slot);
+        }
+        // Endpoint detection reports a little late; the next utterance may already have
+        // started. Carry the tail over as the next utterance's pre-roll.
+        let keep = (0.8 * SAMPLE_RATE as f32) as usize;
+        let tail = self.audio.len().saturating_sub(keep);
+        self.pre_roll = self.audio.drain(tail..).collect();
+        self.audio.clear();
+        match (self.entry.take(), text.is_empty()) {
+            (Some(id), false) => {
+                self.hub.update_entry(id, text, false);
+            }
+            (Some(id), true) => self.hub.remove_entry(id),
+            _ => {}
+        }
+        self.last_text.clear();
+        self.session.reset();
+    }
+
+    pub fn finish(mut self) {
+        // Push a little silence so the last words come out, then close the utterance.
+        self.session.accept(&vec![0.0; SAMPLE_RATE as usize / 2]);
+        let text = super::sentence_case(&self.session.text());
+        if !text.is_empty() {
+            self.last_text = text.clone();
+            if self.entry.is_none() {
+                self.entry = Some(self.hub.add_entry(self.channel_id, text, EntrySource::Audio, true).id);
+            }
+        }
+        self.end_utterance();
     }
 }

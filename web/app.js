@@ -653,6 +653,10 @@ $('#oscTest').onsubmit = async ev => {
 async function renderModels() {
   const m = await api('/models');
   $('#modelsDir').textContent = m.modelsDir;
+  const pm = S.cfg.settings.stt.partialModel || '';
+  const streaming = m.models.filter(x => x.kind === 'streamingTransducer');
+  $('#partialModel').innerHTML = `<option value="">off (repeat partial decodes)</option>` + streaming.map(x => `<option value="${x.id}" ${x.id === pm ? 'selected' : ''} ${x.installed ? '' : 'disabled'}>${esc(x.name)}${x.installed ? '' : ' (download first)'}</option>`).join('');
+  $('#partialModel').disabled = m.models.find(x => x.active)?.kind === 'streamingTransducer';
   $('#modelList').innerHTML = m.models.map(x => `
     <div class="card ${x.active ? 'active' : ''}" data-id="${x.id}">
       <h4>${esc(x.name)}</h4>
@@ -670,6 +674,9 @@ function updateDownload(msg) {
   const bd = $('#bannerDl');
   if (bd) bd.textContent = 'Downloading… ' + (msg.split(': ')[1] || '');
 }
+$('#partialModel').onchange = async ev => {
+  await api('/settings', { method: 'PUT', body: { stt: { partialModel: ev.target.value || null } } }).catch(e => toast(e.message, true));
+};
 $('#modelList').addEventListener('click', async ev => {
   const card = ev.target.closest('.card');
   if (!card) return;

@@ -104,6 +104,8 @@
     <div class="page">
       <div class="page-head"><h2>Speech models</h2></div>
       <p class="hint">All speech recognition runs on this computer. Models are stored in <code id="modelsDir"></code>.</p>
+      <div class="card"><div class="row"><label>Live text (two-pass): <select id="partialModel"></select></label>
+        <span class="hint">A streaming model shows words while people speak; the main model then writes the final line. This uses much less CPU than repeated partial decodes.</span></div></div>
       <div id="modelList" class="cards"></div>
     </div>
   </section>

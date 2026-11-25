@@ -11,7 +11,7 @@ mod pipeline;
 #[cfg(feature = "stt")]
 mod sherpa;
 
-pub use pipeline::{AudioMsg, ChannelPipeline, FixedRecognizer, PipelineConfig};
+pub use pipeline::{AudioMsg, ChannelPipeline, FixedRecognizer, PipelineConfig, StreamingPipeline};
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -84,6 +84,69 @@ pub trait Segmenter: Send {
 
 pub type SharedRecognizer = Arc<dyn Recognizer>;
 
+/// One channel's live decoding state in a streaming model.
+pub trait StreamSession: Send {
+    fn accept(&mut self, samples: &[f32]);
+    /// Current text of the utterance in progress.
+    fn text(&self) -> String;
+    /// The model detected the end of an utterance.
+    fn is_endpoint(&self) -> bool;
+    /// Start a new utterance.
+    fn reset(&mut self);
+}
+
+/// A streaming model; creates one session per channel.
+pub trait StreamingRecognizer: Send + Sync {
+    fn session(&self) -> Box<dyn StreamSession>;
+    fn name(&self) -> String;
+}
+
+/// A loaded model of either kind.
+#[derive(Clone)]
+pub enum Engine {
+    Offline(SharedRecognizer),
+    Streaming(Arc<dyn StreamingRecognizer>),
+}
+
+impl Engine {
+    pub fn name(&self) -> String {
+        match self {
+            Engine::Offline(r) => r.name(),
+            Engine::Streaming(r) => r.name(),
+        }
+    }
+}
+
+/// Streaming models print UPPER CASE without punctuation; make it readable.
+pub fn sentence_case(t: &str) -> String {
+    let t = t.trim();
+    if t.chars().any(|c| c.is_lowercase()) {
+        return t.to_string();
+    }
+    let lower = t.to_lowercase();
+    let mut out = String::with_capacity(lower.len());
+    let mut first = true;
+    for w in lower.split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        if w == "i" || w.starts_with("i'") {
+            out.push('I');
+            out.push_str(&w[1..]);
+        } else if first {
+            let mut c = w.chars();
+            if let Some(f) = c.next() {
+                out.extend(f.to_uppercase());
+                out.push_str(c.as_str());
+            }
+        } else {
+            out.push_str(w);
+        }
+        first = false;
+    }
+    out
+}
+
 /// Build a segmenter factory: Silero VAD when available, energy VAD otherwise.
 pub fn segmenter_factory(vad_model: Option<std::path::PathBuf>, cfg: &crate::model::SttSettings) -> Arc<dyn Fn() -> Box<dyn Segmenter> + Send + Sync> {
     let threshold = cfg.vad_threshold;
@@ -105,16 +168,35 @@ pub fn segmenter_factory(vad_model: Option<std::path::PathBuf>, cfg: &crate::mod
     Arc::new(move || Box::new(EnergySegmenter::new(min_silence, max_speech)) as Box<dyn Segmenter>)
 }
 
-/// Load a recognizer for a catalog model.
-pub fn load_recognizer(cfg: &crate::model::SttSettings) -> Result<SharedRecognizer> {
+/// Load a catalog model.
+pub fn load_engine(cfg: &crate::model::SttSettings) -> Result<Engine> {
     #[cfg(feature = "stt")]
     {
         let spec = catalog::find(&cfg.model).ok_or_else(|| anyhow::anyhow!("unknown model {:?} (see `opencom models`)", cfg.model))?;
         let dir = models::models_dir(cfg).join(spec.dir);
-        if !dir.exists() {
+        if !models::is_installed(&models::models_dir(cfg), spec) {
             anyhow::bail!("model {} is not downloaded; run `opencom models download {}`", spec.id, spec.id);
         }
-        Ok(Arc::new(sherpa::SherpaRecognizer::load(spec, &dir, cfg.threads)?))
+        if spec.kind == catalog::ModelKind::StreamingTransducer {
+            return Ok(Engine::Streaming(Arc::new(sherpa::SherpaStreaming::load(spec, &dir, cfg)?)));
+        }
+        Ok(Engine::Offline(Arc::new(sherpa::SherpaRecognizer::load(spec, &dir, cfg.threads)?)))
+    }
+    #[cfg(not(feature = "stt"))]
+    {
+        let _ = cfg;
+        anyhow::bail!("this build has no speech-to-text (built without the `stt` feature)")
+    }
+}
+
+/// Load an offline (VAD-segmented) recognizer.
+pub fn load_recognizer(cfg: &crate::model::SttSettings) -> Result<SharedRecognizer> {
+    #[cfg(feature = "stt")]
+    {
+        match load_engine(cfg)? {
+            Engine::Offline(r) => Ok(r),
+            Engine::Streaming(_) => anyhow::bail!("model {} is a streaming model", cfg.model),
+        }
     }
     #[cfg(not(feature = "stt"))]
     {
@@ -214,6 +296,16 @@ mod tests {
         let segs = s.accept(&audio);
         assert_eq!(segs.len(), 2);
         assert!(segs[0].len() >= 16000 && segs[0].len() <= 16000 + 6400, "{}", segs[0].len());
+    }
+}
+
+#[cfg(test)]
+mod case_tests {
+    #[test]
+    fn sentence_case() {
+        assert_eq!(super::sentence_case("IT IS VERY LIKE THE OLD PORTRAIT"), "It is very like the old portrait");
+        assert_eq!(super::sentence_case("I DON'T KNOW I'M HERE"), "I don't know I'm here");
+        assert_eq!(super::sentence_case("Already Mixed"), "Already Mixed");
     }
 }
 

@@ -1,9 +1,10 @@
 //! sherpa-onnx backed recognizer and Silero VAD segmenter.
 
 use super::catalog::{ModelKind, ModelSpec};
-use super::{Recognizer, Segmenter, SAMPLE_RATE};
+use super::{Recognizer, Segmenter, StreamSession, StreamingRecognizer, SAMPLE_RATE};
 use anyhow::{anyhow, Result};
-use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig, SileroVadModelConfig, VadModelConfig, VoiceActivityDetector};
+use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig, OnlineRecognizer, OnlineRecognizerConfig, OnlineStream, SileroVadModelConfig, VadModelConfig, VoiceActivityDetector};
+use std::sync::Arc;
 use std::path::Path;
 
 pub struct SherpaRecognizer {
@@ -37,6 +38,7 @@ impl SherpaRecognizer {
                 cfg.model_config.moonshine.uncached_decoder = f("uncached_decoder")?;
                 cfg.model_config.moonshine.cached_decoder = f("cached_decoder")?;
             }
+            ModelKind::StreamingTransducer => return Err(anyhow!("{} is a streaming model", spec.id)),
             ModelKind::Whisper => {
                 cfg.model_config.whisper.encoder = f("encoder")?;
                 cfg.model_config.whisper.decoder = f("decoder")?;
@@ -123,5 +125,65 @@ impl Segmenter for SileroSegmenter {
     fn flush(&mut self) -> Vec<Vec<f32>> {
         self.vad.flush();
         self.drain()
+    }
+}
+
+pub struct SherpaStreaming {
+    rec: Arc<OnlineRecognizer>,
+    name: String,
+}
+
+impl SherpaStreaming {
+    pub fn load(spec: &ModelSpec, dir: &Path, stt: &crate::model::SttSettings) -> Result<Self> {
+        let f = |role: &str| -> Result<Option<String>> {
+            let name = spec.file(role).ok_or_else(|| anyhow!("model {} has no {role} file", spec.id))?;
+            Ok(Some(dir.join(name).to_string_lossy().to_string()))
+        };
+        let mut cfg = OnlineRecognizerConfig::default();
+        cfg.model_config.transducer.encoder = f("encoder")?;
+        cfg.model_config.transducer.decoder = f("decoder")?;
+        cfg.model_config.transducer.joiner = f("joiner")?;
+        cfg.model_config.tokens = f("tokens")?;
+        cfg.model_config.num_threads = 1;
+        cfg.decoding_method = Some("greedy_search".into());
+        cfg.enable_endpoint = true;
+        cfg.rule1_min_trailing_silence = 2.4;
+        cfg.rule2_min_trailing_silence = stt.min_silence.max(0.4);
+        cfg.rule3_min_utterance_length = stt.max_speech.max(4.0);
+        let rec = OnlineRecognizer::create(&cfg).ok_or_else(|| anyhow!("sherpa-onnx could not load model {}", spec.id))?;
+        Ok(Self { rec: Arc::new(rec), name: spec.name.to_string() })
+    }
+}
+
+impl StreamingRecognizer for SherpaStreaming {
+    fn session(&self) -> Box<dyn StreamSession> {
+        let stream = self.rec.create_stream();
+        Box::new(SherpaSession { rec: self.rec.clone(), stream })
+    }
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+}
+
+struct SherpaSession {
+    rec: Arc<OnlineRecognizer>,
+    stream: OnlineStream,
+}
+
+impl StreamSession for SherpaSession {
+    fn accept(&mut self, samples: &[f32]) {
+        self.stream.accept_waveform(SAMPLE_RATE as i32, samples);
+        while self.rec.is_ready(&self.stream) {
+            self.rec.decode(&self.stream);
+        }
+    }
+    fn text(&self) -> String {
+        self.rec.get_result(&self.stream).map(|r| r.text.trim().to_string()).unwrap_or_default()
+    }
+    fn is_endpoint(&self) -> bool {
+        self.rec.is_endpoint(&self.stream)
+    }
+    fn reset(&mut self) {
+        self.rec.reset(&self.stream);
     }
 }

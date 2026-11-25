@@ -107,6 +107,13 @@ opencom transcribe some-speech.wav --model moonshine-tiny-en-int8
 | `moonshine-base-en-int8` | 240 MB | fastest | English on small machines |
 | `whisper-base.en` | 199 MB | fast | English, Whisper behavior |
 | `whisper-small` | 610 MB | slower | other languages |
+| `zipformer-streaming-en-2023-06-26` | 296 MB | live words, very low CPU | many channels; no punctuation |
+| `zipformer-streaming-en-20m` | 122 MB | live words, lowest CPU | weak machines |
+
+**Two-pass mode (recommended for many channels).** Set **Speech models → Live text** to a
+streaming model. The streaming model shows words while people speak and detects the end of
+each line. Parakeet then writes the final line once, with punctuation. On the 8-channel test
+below, two-pass used about 1.6 cores, against 4.4 cores for repeated partial decodes.
 
 **Measured load** (Parakeet v2, 2 threads per decode, 8 channels of *non-stop* speech, 32-thread desktop CPU):
 about 1.3 cores with partial results off and about 4.4 cores with them on.
@@ -167,7 +174,6 @@ sound card ──► capture thread ──► per-channel resample to 16 kHz
 ## Roadmap
 
 - Translation of channels into the reader's language
-- Streaming (word-by-word) models such as Zipformer
 - Signed Windows and macOS installers
 
 ## About this project

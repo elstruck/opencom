@@ -4,7 +4,7 @@
 use crate::audio::{self, Capture};
 use crate::hub::{Event, SharedHub};
 use crate::model::{ChannelSource, SttSettings};
-use crate::stt::{self, AudioMsg, ChannelPipeline, PipelineConfig, SharedRecognizer};
+use crate::stt::{self, AudioMsg, ChannelPipeline, PipelineConfig, StreamingPipeline};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -34,7 +34,8 @@ struct Inner {
     captures: Vec<Capture>,
     remotes: Vec<tokio::task::JoinHandle<()>>,
     pipelines: Vec<std::thread::JoinHandle<()>>,
-    rec: Option<(String, SharedRecognizer)>,
+    rec: Option<(String, stt::Engine)>,
+    partial: Option<(String, std::sync::Arc<dyn stt::StreamingRecognizer>)>,
     sig: Option<Signature>,
     errors: HashMap<String, String>,
 }
@@ -141,7 +142,7 @@ impl Runtime {
         if inner.rec.as_ref().map(|(k, _)| k != &model_key).unwrap_or(true) {
             inner.rec = None;
             self.status("stt", true, format!("loading model {}", sig.stt.model));
-            match stt::load_recognizer(&sig.stt) {
+            match stt::load_engine(&sig.stt) {
                 Ok(r) => {
                     self.status("stt", true, format!("model ready: {}", r.name()));
                     inner.rec = Some((model_key, r));
@@ -154,15 +155,54 @@ impl Runtime {
                 }
             }
         }
-        let rec = inner.rec.as_ref().unwrap().1.clone();
+        let engine = inner.rec.as_ref().unwrap().1.clone();
+        // Optional streaming model for live text in two-pass mode.
+        let partial = match (&engine, sig.stt.partial_model.as_deref().filter(|m| !m.is_empty())) {
+            (stt::Engine::Offline(_), Some(pm)) => {
+                let pkey = format!("{pm}|{:?}", sig.stt.models_dir);
+                if inner.partial.as_ref().map(|(k, _)| k != &pkey).unwrap_or(true) {
+                    let mut pc = sig.stt.clone();
+                    pc.model = pm.to_string();
+                    inner.partial = match stt::load_engine(&pc) {
+                        Ok(stt::Engine::Streaming(sr)) => Some((pkey, sr)),
+                        Ok(_) => {
+                            self.status("stt", false, format!("partial model {pm} is not a streaming model; ignoring it"));
+                            None
+                        }
+                        Err(e) => {
+                            self.status("stt", false, format!("partial model: {e:#}"));
+                            None
+                        }
+                    };
+                }
+                inner.partial.as_ref().map(|(_, sr)| sr.clone())
+            }
+            _ => None,
+        };
         let make_seg = stt::segmenter_factory(Some(stt::models::vad_path(&sig.stt)), &sig.stt);
         let pcfg = PipelineConfig { partial_interval: sig.stt.partial_interval, gate: stt::DecodeGate::for_machine(sig.stt.threads), ..Default::default() };
 
         let mut device_routes: HashMap<Option<String>, Vec<(u16, std::sync::mpsc::Sender<AudioMsg>)>> = HashMap::new();
         for ch in &active {
             let (tx, rx) = std::sync::mpsc::channel::<AudioMsg>();
-            let p = ChannelPipeline::new(ch.id, self.hub.clone(), rec.clone(), make_seg(), pcfg.clone());
-            match std::thread::Builder::new().name(format!("stt-{}", ch.name)).spawn(move || p.run(rx)) {
+            let hub = self.hub.clone();
+            let run: Box<dyn FnOnce() + Send> = match &engine {
+                stt::Engine::Offline(rec) => match &partial {
+                    Some(sr) => {
+                        let p = StreamingPipeline::new(ch.id, hub, sr.session(), pcfg.clone()).with_final(rec.clone());
+                        Box::new(move || p.run(rx))
+                    }
+                    None => {
+                        let p = ChannelPipeline::new(ch.id, hub, rec.clone(), make_seg(), pcfg.clone());
+                        Box::new(move || p.run(rx))
+                    }
+                },
+                stt::Engine::Streaming(sr) => {
+                    let p = StreamingPipeline::new(ch.id, hub, sr.session(), pcfg.clone());
+                    Box::new(move || p.run(rx))
+                }
+            };
+            match std::thread::Builder::new().name(format!("stt-{}", ch.name)).spawn(run) {
                 Ok(h) => inner.pipelines.push(h),
                 Err(e) => {
                     inner.errors.insert(ch.id.to_string(), e.to_string());
