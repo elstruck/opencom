@@ -78,7 +78,22 @@ pub async fn start(show: PathBuf, host: &str, port: u16) -> Result<Server> {
     if let Err(e) = network.start(addr.port(), &hub.read(|c| c.name.clone()), advertise) {
         tracing::warn!("LAN discovery disabled: {e:#}");
     }
-    let app = router(AppState { hub: hub.clone(), engine, runtime: Some(runtime.clone()), network: Some(network.clone()), started: Instant::now() });
+    let state = AppState { hub: hub.clone(), engine, runtime: Some(runtime.clone()), network: Some(network.clone()), started: Instant::now() };
+    if let Some(cport) = hub.read(|c| c.settings.compat_prodcom_port) {
+        let compat = crate::compat::router(state.clone());
+        let chost = host.to_string();
+        let h = hub.clone();
+        tokio::spawn(async move {
+            match tokio::net::TcpListener::bind((chost.as_str(), cport)).await {
+                Ok(l) => {
+                    tracing::info!("ProdCom-compatible API on {chost}:{cport}");
+                    let _ = axum::serve(l, compat).await;
+                }
+                Err(e) => h.emit(Event::Status { component: "compat".into(), ok: false, message: format!("port {cport}: {e}") }),
+            }
+        });
+    }
+    let app = router(state);
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let task = tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, app)

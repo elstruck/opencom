@@ -657,7 +657,7 @@ async function renderSettings() {
   f.showName.value = S.cfg.name || '';
   f.threads.value = s.stt.threads; f.partialInterval.value = s.stt.partialInterval; f.vadThreshold.value = s.stt.vadThreshold;
   f.minSilence.value = s.stt.minSilence; f.maxSpeech.value = s.stt.maxSpeech; f.oscListenPort.value = s.oscListenPort ?? '';
-  f.apiKey.value = s.apiKey || ''; f.historyLimit.value = s.historyLimit;
+  f.apiKey.value = s.apiKey || ''; f.historyLimit.value = s.historyLimit; f.compatPort.value = s.compatProdcomPort ?? '';
   const st = await api('/status');
   $('#savePath').textContent = st.savePath || '(not saved)';
 }
@@ -671,6 +671,7 @@ $('#settingsForm').onsubmit = async ev => {
     cfg.settings.oscListenPort = f.oscListenPort.value ? +f.oscListenPort.value : null;
     cfg.settings.apiKey = f.apiKey.value || null;
     cfg.settings.historyLimit = +f.historyLimit.value;
+    cfg.settings.compatProdcomPort = f.compatPort.value ? +f.compatPort.value : null;
     await api('/config', { method: 'PUT', body: cfg });
     if (cfg.settings.apiKey) localStorage.setItem('opencom.key', cfg.settings.apiKey); else localStorage.removeItem('opencom.key');
     logStatus({ component: 'settings', ok: true, message: 'saved (OSC port changes need a restart)' });

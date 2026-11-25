@@ -398,6 +398,9 @@ pub struct Settings {
     /// Keep at most this many transcript entries in memory.
     #[serde(default = "default_history")]
     pub history_limit: usize,
+    /// Serve a ProdCom-compatible API on this port (for example 24480). `None` turns it off.
+    #[serde(default)]
+    pub compat_prodcom_port: Option<u16>,
 }
 
 fn default_history() -> usize {
@@ -411,6 +414,7 @@ impl Default for Settings {
             osc_listen_port: Some(9431),
             api_key: None,
             history_limit: default_history(),
+            compat_prodcom_port: None,
         }
     }
 }

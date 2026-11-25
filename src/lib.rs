@@ -13,3 +13,4 @@ pub mod api;
 pub mod runtime;
 pub mod server;
 pub mod network;
+pub mod compat;
