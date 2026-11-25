@@ -1,10 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use opencom::api::{router, AppState};
-use opencom::automation::Engine;
 use opencom::hub::Hub;
 use opencom::model::{EntrySource, ShowConfig};
-use opencom::runtime::Runtime;
 use opencom::stt::{self, catalog, models};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -56,12 +53,6 @@ enum ModelsCmd {
     Download { id: String },
 }
 
-fn default_show_path() -> PathBuf {
-    directories::ProjectDirs::from("io", "opencom", "opencom")
-        .map(|d| d.config_dir().join("show.json"))
-        .unwrap_or_else(|| PathBuf::from("show.json"))
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -69,7 +60,7 @@ async fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.cmd.unwrap_or(Cmd::Serve { show: None, host: "127.0.0.1".into(), port: 7420, open: false }) {
-        Cmd::Serve { show, host, port, open } => serve(show.unwrap_or_else(default_show_path), &host, port, open).await,
+        Cmd::Serve { show, host, port, open } => serve(show.unwrap_or_else(opencom::server::default_show_path), &host, port, open).await,
         Cmd::Devices => {
             let devs = tokio::task::spawn_blocking(opencom::audio::list_inputs).await?;
             if devs.is_empty() {
@@ -147,43 +138,14 @@ async fn transcribe(file: PathBuf, model: Option<String>, threads: i32) -> Resul
 }
 
 async fn serve(show: PathBuf, host: &str, port: u16, open: bool) -> Result<()> {
-    let hub = Hub::open(show.clone())?;
-    tracing::info!("show file: {}", show.display());
-    if hub.read(|c| c.channels.is_empty()) {
-        hub.update(|c| c.channels.push(opencom::model::Channel::new("Comms")));
-    }
-    let stt_cfg = hub.read(|c| c.settings.stt.clone());
-    if let Err(e) = models::ensure_vad(&stt_cfg).await {
-        tracing::warn!("could not fetch Silero VAD model ({e:#}); using energy VAD");
-    }
-    let engine = Engine::new(hub.clone());
-    engine.start();
-    let runtime = Runtime::new(hub.clone());
-    runtime.start();
-    if let Some(p) = hub.read(|c| c.settings.osc_listen_port) {
-        let h = hub.clone();
-        tokio::spawn(async move {
-            if let Err(e) = opencom::osc::listen(h.clone(), p).await {
-                tracing::warn!("OSC input disabled: {e:#}");
-                h.emit(opencom::hub::Event::Status { component: "osc".into(), ok: false, message: format!("{e:#}") });
-            }
-        });
-    }
-    let app = router(AppState { hub: hub.clone(), engine, runtime: Some(runtime.clone()), started: Instant::now() });
-    let listener = tokio::net::TcpListener::bind((host, port)).await.with_context(|| format!("binding {host}:{port}"))?;
-    let url = format!("http://{}:{port}/", if host == "0.0.0.0" { "localhost" } else { host });
+    let server = opencom::server::start(show, host, port).await?;
+    let url = server.url();
     println!("opencom {} running at {url}", env!("CARGO_PKG_VERSION"));
     if open {
         let _ = open_browser(&url);
     }
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
-    runtime.stop();
-    hub.save()?;
-    Ok(())
+    tokio::signal::ctrl_c().await?;
+    server.stop().await
 }
 
 fn open_browser(url: &str) -> std::io::Result<std::process::Child> {

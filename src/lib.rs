@@ -11,3 +11,4 @@ pub mod audio;
 pub mod stt;
 pub mod api;
 pub mod runtime;
+pub mod server;
