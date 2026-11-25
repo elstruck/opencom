@@ -7,3 +7,7 @@ pub mod midi;
 pub mod model;
 pub mod osc;
 pub mod template;
+pub mod audio;
+pub mod stt;
+pub mod api;
+pub mod runtime;

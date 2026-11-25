@@ -21,6 +21,7 @@ pub enum Event {
     EntryAdded { entry: TranscriptEntry },
     EntryUpdated { entry: TranscriptEntry },
     TranscriptCleared { channel_id: Option<Uuid> },
+    EntryRemoved { id: Uuid },
     /// Show configuration changed (channels, keywords, automations, ...).
     ConfigChanged,
     #[serde(rename_all = "camelCase")]
@@ -212,6 +213,7 @@ impl Hub {
     /// Remove an entry (for example, an in-progress entry that ended up empty).
     pub fn remove_entry(&self, id: Uuid) {
         self.transcript.write().retain(|e| e.id != id);
+        self.emit(Event::EntryRemoved { id });
     }
 
     pub fn clear_transcript(&self, channel_id: Option<Uuid>) {
