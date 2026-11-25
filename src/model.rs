@@ -196,6 +196,21 @@ pub enum Trigger {
         /// Address pattern. `*` matches one path segment, `**` matches the rest.
         address: String,
     },
+    /// A MIDI message arrives on any MIDI input (or one whose name contains `port`).
+    #[serde(rename_all = "camelCase")]
+    Midi {
+        #[serde(default)]
+        port: Option<String>,
+        /// `noteOn`, `noteOff`, `controlChange` or `programChange`. `None` matches all.
+        #[serde(default)]
+        kind: Option<String>,
+        /// MIDI channel 0..15. `None` matches all.
+        #[serde(default)]
+        channel: Option<u8>,
+        /// Note, controller or program number. `None` matches all.
+        #[serde(default)]
+        number: Option<u8>,
+    },
     /// An HTTP POST arrives at `/api/v1/webhooks/{path}`.
     Webhook { path: String },
     /// Only manual runs (API or UI button).

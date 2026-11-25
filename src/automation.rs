@@ -96,6 +96,26 @@ impl Engine {
                     }
                 }
             }
+            Event::MidiReceived { port, kind, channel, number, value } => {
+                for a in automations.iter().filter(|a| a.enabled) {
+                    if let Trigger::Midi { port: p, kind: k, channel: c, number: n } = &a.trigger {
+                        let ok = p.as_ref().map(|p| port.to_lowercase().contains(&p.to_lowercase())).unwrap_or(true)
+                            && k.as_ref().map(|k| k == kind).unwrap_or(true)
+                            && c.map(|c| c == *channel).unwrap_or(true)
+                            && n.map(|n| n == *number).unwrap_or(true);
+                        if ok {
+                            let vars = Vars::new()
+                                .set("text", format!("{kind} ch{} {number} {value}", channel + 1))
+                                .set("port", port.clone())
+                                .set("kind", kind.clone())
+                                .set("midiChannel", (channel + 1).to_string())
+                                .set("number", number.to_string())
+                                .set("value", value.to_string());
+                            self.fire(a, vars, format!("MIDI {kind} ch{} {number}", channel + 1));
+                        }
+                    }
+                }
+            }
             Event::WebhookReceived { path, body } => {
                 for a in automations.iter().filter(|a| a.enabled) {
                     if let Trigger::Webhook { path: p } = &a.trigger {
@@ -338,6 +358,33 @@ mod tests {
         hub.add_entry(ch_id, "x".into(), EntrySource::Audio, false);
         tokio::time::sleep(Duration::from_millis(600)).await;
         assert_eq!(hub.transcript().iter().filter(|e| e.text == "done").count(), 1);
+    }
+
+    #[tokio::test]
+    async fn midi_trigger_filters() {
+        let mut cfg = ShowConfig::default();
+        let ch = Channel::new("SM");
+        let ch_id = ch.id;
+        cfg.channels.push(ch);
+        cfg.automations.push(Automation {
+            id: Uuid::new_v4(),
+            name: "pad".into(),
+            enabled: true,
+            policy: ExecutionPolicy::RunParallel,
+            cooldown_seconds: 0.0,
+            trigger: Trigger::Midi { port: None, kind: Some("noteOn".into()), channel: Some(0), number: Some(36) },
+            actions: vec![Action::SendText { channel_id: ch_id, text: "pad {number} vel {value}".into() }],
+        });
+        let hub = Hub::new(cfg, None);
+        let eng = Engine::new(hub.clone());
+        eng.start();
+        tokio::task::yield_now().await;
+        hub.emit(Event::MidiReceived { port: "x".into(), kind: "noteOn".into(), channel: 0, number: 37, value: 100 });
+        hub.emit(Event::MidiReceived { port: "x".into(), kind: "noteOn".into(), channel: 0, number: 36, value: 99 });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let t = hub.transcript();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].text, "pad 36 vel 99");
     }
 
     #[tokio::test]

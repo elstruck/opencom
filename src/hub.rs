@@ -34,6 +34,8 @@ pub enum Event {
     OscReceived { address: String, args: Vec<String>, from: String },
     #[serde(rename_all = "camelCase")]
     WebhookReceived { path: String, body: String },
+    #[serde(rename_all = "camelCase")]
+    MidiReceived { port: String, kind: String, channel: u8, number: u8, value: u8 },
     /// Input level per channel, 0..1 RMS, about 10 times per second.
     #[serde(rename_all = "camelCase")]
     Level { channel_id: Uuid, rms: f32, speaking: bool },

@@ -21,7 +21,7 @@ or flash an alert on every screen.
   - **Whisper** base and small, for other languages.
 - **Keywords.** Highlight words or phrases, show a replacement text, or mask words.
 - **Automations.** A trigger runs a list of actions:
-  - Triggers: a spoken phrase (optionally before the sentence ends), incoming OSC (with wildcards), an HTTP webhook, or a manual run.
+  - Triggers: a spoken phrase (optionally before the sentence ends), incoming OSC (with wildcards), incoming MIDI, an HTTP webhook, or a manual run.
   - Actions: OSC, MIDI, HTTP request, post text into a channel, full-screen alert, UI commands, delay.
   - Policies: restart if running, ignore if running, run in parallel. An optional cooldown limits repeat firing.
 - **Typed messages.** Anyone can type into a channel. This lets FOH reply without talking.
@@ -168,7 +168,6 @@ sound card ──► capture thread ──► per-channel resample to 16 kHz
 
 - Translation of channels into the reader's language
 - Streaming (word-by-word) models such as Zipformer
-- MIDI input triggers
 - Signed Windows and macOS installers
 
 ## About this project

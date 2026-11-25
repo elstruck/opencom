@@ -12,6 +12,19 @@ pub struct MidiPort {
     pub is_input: bool,
 }
 
+/// Parse a channel voice message into (kind, channel, number, value).
+pub fn parse(bytes: &[u8]) -> Option<(&'static str, u8, u8, u8)> {
+    let status = *bytes.first()?;
+    let ch = status & 0x0F;
+    match status & 0xF0 {
+        0x90 if bytes.get(2).copied().unwrap_or(0) > 0 => Some(("noteOn", ch, *bytes.get(1)?, *bytes.get(2)?)),
+        0x90 | 0x80 => Some(("noteOff", ch, *bytes.get(1)?, bytes.get(2).copied().unwrap_or(0))),
+        0xB0 => Some(("controlChange", ch, *bytes.get(1)?, *bytes.get(2)?)),
+        0xC0 => Some(("programChange", ch, *bytes.get(1)?, 0)),
+        _ => None,
+    }
+}
+
 #[cfg(feature = "midi")]
 mod imp {
     use super::*;
@@ -49,6 +62,40 @@ mod imp {
         out
     }
 
+    /// Listen on every MIDI input (except our own output) and publish `MidiReceived` events.
+    /// Keep the returned value alive; dropping it closes the inputs.
+    pub fn start_inputs(hub: crate::hub::SharedHub) -> Vec<midir::MidiInputConnection<()>> {
+        let mut conns = Vec::new();
+        let Ok(probe) = MidiInput::new("opencom-probe") else { return conns };
+        for p in probe.ports() {
+            let Ok(name) = probe.port_name(&p) else { continue };
+            if name.contains("opencom") {
+                continue;
+            }
+            let Ok(mut input) = MidiInput::new("opencom-in") else { continue };
+            input.ignore(midir::Ignore::All);
+            let h = hub.clone();
+            let n2 = name.clone();
+            match input.connect(
+                &p,
+                "opencom-in",
+                move |_ts, bytes, _| {
+                    if let Some((kind, channel, number, value)) = super::parse(bytes) {
+                        h.emit(crate::hub::Event::MidiReceived { port: n2.clone(), kind: kind.into(), channel, number, value });
+                    }
+                },
+                (),
+            ) {
+                Ok(c) => {
+                    tracing::info!("MIDI input: {name}");
+                    conns.push(c);
+                }
+                Err(e) => tracing::warn!("MIDI input {name}: {e}"),
+            }
+        }
+        conns
+    }
+
     pub fn send(port: Option<&str>, msg: &MidiMessage) -> Result<()> {
         let key = port.unwrap_or("").to_string();
         let mut map = conns().lock();
@@ -78,6 +125,9 @@ mod imp {
 #[cfg(not(feature = "midi"))]
 mod imp {
     use super::*;
+    pub fn start_inputs(_hub: crate::hub::SharedHub) -> Vec<()> {
+        vec![]
+    }
     pub fn list_ports() -> Vec<MidiPort> {
         vec![]
     }
@@ -86,4 +136,16 @@ mod imp {
     }
 }
 
-pub use imp::{list_ports, send};
+pub use imp::{list_ports, send, start_inputs};
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parse_messages() {
+        assert_eq!(super::parse(&[0x91, 60, 100]), Some(("noteOn", 1, 60, 100)));
+        assert_eq!(super::parse(&[0x90, 60, 0]), Some(("noteOff", 0, 60, 0)));
+        assert_eq!(super::parse(&[0xB2, 7, 127]), Some(("controlChange", 2, 7, 127)));
+        assert_eq!(super::parse(&[0xC0, 5]), Some(("programChange", 0, 5, 0)));
+        assert_eq!(super::parse(&[0xF8]), None);
+    }
+}

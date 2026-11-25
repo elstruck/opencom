@@ -509,13 +509,17 @@ function actionFields(a, i) {
 }
 
 function triggerFields(t) {
-  const kinds = { phrase: 'When someone says', osc: 'When OSC arrives', webhook: 'When a webhook is called', manual: 'Only when run by hand' };
+  const kinds = { phrase: 'When someone says', osc: 'When OSC arrives', midi: 'When MIDI arrives', webhook: 'When a webhook is called', manual: 'Only when run by hand' };
   const sel = `<select data-f="trigger.type">${Object.entries(kinds).map(([k, v]) => `<option value="${k}" ${t.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
   if (t.type === 'phrase') return `${sel}<input class="grow" data-f="trigger.phrasesText" value="${esc((t.phrases || []).join(', '))}" placeholder="phrases, comma-separated">
     <label>on ${channelSelect('trigger.channel', (t.channelIds || [])[0], true)}</label>
     <label title="Fire on partial text, before the speaker finishes"><input type="checkbox" data-f="trigger.early" ${t.early ? 'checked' : ''}> early</label>
     <label><input type="checkbox" data-f="trigger.wholeWord" ${t.wholeWord !== false ? 'checked' : ''}> whole words</label>`;
   if (t.type === 'osc') return `${sel}<input class="grow" data-f="trigger.address" value="${esc(t.address || '')}" placeholder="/eos/out/event/cue/*/*/fire">`;
+  if (t.type === 'midi') return `${sel}<select data-f="trigger.kind"><option value="">any message</option>${['noteOn', 'noteOff', 'controlChange', 'programChange'].map(k => `<option ${t.kind === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
+    <label>ch <input type="number" min="1" max="16" placeholder="any" data-f="trigger.midiChannel" value="${t.channel != null ? t.channel + 1 : ''}" style="width:64px"></label>
+    <label>number <input type="number" min="0" max="127" placeholder="any" data-f="trigger.number" value="${t.number ?? ''}" style="width:72px"></label>
+    <input data-f="trigger.port" placeholder="port (any)" value="${esc(t.port || '')}" size="14">`;
   if (t.type === 'webhook') return `${sel}<span class="hint">POST /api/v1/webhooks/</span><input data-f="trigger.path" value="${esc(t.path || '')}" placeholder="path">`;
   return sel;
 }
@@ -566,9 +570,11 @@ $('#automationEditors').addEventListener('change', async ev => {
   let v = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
   if (ev.target.type === 'number') v = v === '' ? null : +v;
   if (f === 'trigger.type') {
-    a.trigger = v === 'phrase' ? { type: 'phrase', phrases: [], channelIds: [], early: false, wholeWord: true } : v === 'osc' ? { type: 'osc', address: '/' } : v === 'webhook' ? { type: 'webhook', path: 'cue' } : { type: 'manual' };
+    a.trigger = v === 'phrase' ? { type: 'phrase', phrases: [], channelIds: [], early: false, wholeWord: true } : v === 'osc' ? { type: 'osc', address: '/' } : v === 'midi' ? { type: 'midi', port: null, kind: 'noteOn', channel: null, number: null } : v === 'webhook' ? { type: 'webhook', path: 'cue' } : { type: 'manual' };
   } else if (f === 'trigger.phrasesText') a.trigger.phrases = v.split(',').map(s => s.trim()).filter(Boolean);
   else if (f === 'trigger.channel') a.trigger.channelIds = v ? [v] : [];
+  else if (f === 'trigger.midiChannel') a.trigger.channel = v == null ? null : Math.max(0, Math.min(15, v - 1));
+  else if (f === 'trigger.kind' || f === 'trigger.port') a.trigger[f.slice(8)] = v || null;
   else if (f.endsWith('.argsText')) {
     const i = +f.split('.')[1];
     a.actions[i].args = v.split(',').map(s => s.trim()).filter(Boolean).map(s => {

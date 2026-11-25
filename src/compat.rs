@@ -75,6 +75,7 @@ fn automation_json(a: &Automation) -> Value {
         Trigger::Phrase { phrases, channel_ids, early, .. } => json!({ "type": "message", "keywords": phrases, "channelId": channel_ids.first(), "triggerEarly": early }),
         Trigger::Osc { address } => json!({ "type": "osc", "oscTrigger": { "address": address } }),
         Trigger::Webhook { path } => json!({ "type": "httpWebhook", "path": path }),
+        Trigger::Midi { kind, channel, number, .. } => json!({ "type": "midi", "midiCommand": { "type": kind, "channel": channel, "number": number } }),
         Trigger::Manual => json!({ "type": "manual" }),
     };
     json!({

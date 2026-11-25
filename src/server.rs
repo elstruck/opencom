@@ -60,6 +60,11 @@ pub async fn start(show: PathBuf, host: &str, port: u16) -> Result<Server> {
     }
     let engine = Engine::new(hub.clone());
     engine.start();
+    // MIDI inputs live as long as the process; leak the connections on purpose.
+    {
+        let h = hub.clone();
+        std::thread::spawn(move || std::mem::forget(crate::midi::start_inputs(h)));
+    }
     let runtime = Runtime::new(hub.clone());
     runtime.start();
     if let Some(p) = hub.read(|c| c.settings.osc_listen_port) {
